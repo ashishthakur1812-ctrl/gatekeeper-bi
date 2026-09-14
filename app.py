@@ -5,18 +5,57 @@ import os
 import glob
 import time
 import tempfile
-
+import io
 st.set_page_config(page_title="Gatekeeper BI | Enterprise Suite", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ Gatekeeper BI: Executive Dashboard Engine")
 st.caption("Universal 2FA Autonomous Reporting Pipeline (v71.0 Enterprise Master)")
 
-uploaded_file = st.file_uploader("Upload raw business dataset (.csv or .xlsx)")
+# --- 3-WAY UNIVERSAL INPUT ENGINE ---
+if "uploaded_data" not in st.session_state:
+    st.session_state["uploaded_data"] = None
+
+st.write("### 📂 Input Business Data")
+tab_upload, tab_paste, tab_demo = st.tabs(["📁 File Upload (Desktop/iOS)", "📋 Paste CSV (Mobile Safe)", "🧪 1-Click Demo Data"])
+
+with tab_upload:
+    up_file = st.file_uploader("Upload raw business dataset (.csv or .xlsx)", key="main_file_uploader")
+    if up_file is not None:
+        if up_file.name.lower().endswith(('.csv', '.xlsx')):
+            st.session_state["uploaded_data"] = up_file
+        else:
+            st.error("⚠️ Invalid format! Please upload only .csv or .xlsx")
+
+with tab_paste:
+    pasted_text = st.text_area("Paste CSV text directly here (Recommended for Android users)", height=150)
+    if st.button("📥 Load Pasted Data"):
+        if pasted_text.strip():
+            f = io.BytesIO(pasted_text.encode('utf-8'))
+            f.name = "pasted_data.csv"
+            st.session_state["uploaded_data"] = f
+            st.success("Data successfully loaded!")
+        else:
+            st.warning("Please paste some CSV text first.")
+
+with tab_demo:
+    if st.button("🚀 Load Enterprise Sample (Instant Mobile Test)"):
+        demo_csv = (
+            "Transaction_ID,Date,Customer,Amount,Status,Region\n"
+            "TXN1001,2026-09-01,Aarav Sharma,15500,Completed,North\n"
+            "TXN1002,2026-09-02,Priya Patel,8200,Pending,West\n"
+            "TXN1003,2026-09-03,Rohan Verma,45000,Completed,South\n"
+            "TXN1004,2026-09-04,Sneha Rao,-1200,Failed,East\n"
+            "TXN1005,2026-09-05,Vikas Gupta,23400,Completed,North\n"
+        )
+        f = io.BytesIO(demo_csv.encode('utf-8'))
+        f.name = "demo_dataset.csv"
+        st.session_state["uploaded_data"] = f
+        st.success("Enterprise demo data ready!")
+
+uploaded_file = st.session_state["uploaded_data"]
 
 if uploaded_file is not None:
-    if not (uploaded_file.name.lower().endswith('.csv') or uploaded_file.name.lower().endswith('.xlsx')):
-        st.error("⚠️ Invalid format! Please upload only .csv or .xlsx file.")
-        st.stop()
+    uploaded_file.seek(0)
     st.write("---")
     try:
         if uploaded_file.name.endswith('.csv'):
@@ -28,7 +67,8 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"File read error: {e}")
         st.stop()
-
+else:
+    st.stop()
     # Guard: Detect pre-generated dashboards
     sample_cols = [str(c).lower() for c in df_preview.columns]
     if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.isnull().sum().sum() / (df_preview.size or 1)) > 0.8:
