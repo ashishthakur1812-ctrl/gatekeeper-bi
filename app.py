@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
+import subprocess
 import os
 import glob
+import time
 import tempfile
 import io
 import sys
@@ -105,63 +107,66 @@ col3.metric("Data Health / Integrity", f"{clean_ratio:.1f}%", delta=f"{clean_rat
 st.dataframe(df_preview.head(10), use_container_width=True)
 st.write("---")
 
-# --- COMPILATION & EXECUTION ENGINE (Lightning-Fast Vectorized Multi-Sheet Suite) ---
+# --- COMPILATION & EXECUTION ENGINE ---
 if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
     with st.spinner("Executing Autonomous Pipeline (v71.0 Enterprise Master)..."):
         try:
-            df_cleaned = df_preview.copy()
+            file_ext = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
+            temp_input = f"input_run{file_ext}"
             
-            output_excel_filename = "Gatekeeper_Executive_Suite.xlsx"
-            output_csv_filename = "Gatekeeper_Quarantine_Audit.csv"
-            output_parquet_filename = "Gatekeeper_Mirror.parquet"
-            
-            # Generate multi-sheet professional layout without loops
-            with pd.ExcelWriter(output_excel_filename, engine='openpyxl') as writer:
-                df_cleaned.to_excel(writer, sheet_name='Cleaned_Data', index=False)
-                
-                # Executive Summary Sheet
-                summary_df = pd.DataFrame({
-                    "Metric Category": ["Dataset Scale", "Dataset Scale", "Data Integrity", "Pipeline Status", "Compliance Check"],
-                    "Performance Indicator": ["Total Records", "Total Columns", "Health Score (%)", "Execution Mode", "Audit Status"],
-                    "Metric Value": [len(df_cleaned), len(df_cleaned.columns), f"{clean_ratio:.1f}%", "Autonomous v71.0", "Passed Enterprise Standard"]
-                })
-                summary_df.to_excel(writer, sheet_name='Executive_Summary', index=False)
-                
-                # Filtered Analytics / Segment Sheet if columns match
-                numeric_cols = df_cleaned.select_dtypes(include=['number']).columns
-                if len(numeric_cols) > 0:
-                    agg_df = df_cleaned.describe().reset_index()
-                    agg_df.to_excel(writer, sheet_name='Analytics_Dashboard', index=False)
+            uploaded_file.seek(0)
+            with open(temp_input, "wb") as f_out:
+                f_out.write(uploaded_file.read())
+                f_out.flush()
 
-            df_cleaned.to_csv(output_csv_filename, index=False)
-            df_cleaned.to_parquet(output_parquet_filename, index=False)
+            cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input]
+            process_res = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd(), timeout=40)
 
-            st.success("✅ Audit Suite compiled successfully!")
+            if process_res.returncode != 0:
+                st.error("❌ Compilation Pipeline Failed:")
+                st.code(process_res.stderr or process_res.stdout)
+                st.stop()
+
+            # Retrieve rich dashboard from reports/ directory
+            generated_excel = glob.glob(os.path.join("reports", "*Dashboard*.xlsx")) or glob.glob("*.xlsx")
+            generated_csv = glob.glob(os.path.join("quarantine", "*.csv")) or glob.glob("*.csv")
+            generated_parquet = glob.glob(os.path.join("clean_data", "*.parquet")) or glob.glob("*.parquet")
+
+            if not generated_excel:
+                st.error("⚠️ Dashboard output not found.")
+                st.code(process_res.stdout)
+                st.stop()
+
+            st.success("✅ Complete Executive Dashboard Suite compiled successfully!")
 
             d_col1, d_col2, d_col3 = st.columns(3)
 
-            with open(output_excel_filename, "rb") as ef:
+            with open(generated_excel[0], "rb") as ef:
                 d_col1.download_button(
                     label="📥 Download Executive Suite (.xlsx)",
                     data=ef.read(),
-                    file_name=output_excel_filename,
+                    file_name=os.path.basename(generated_excel[0]),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            with open(output_csv_filename, "rb") as cf:
-                d_col2.download_button(
-                    label="🛡️ Download Quarantine Audit (.csv)",
-                    data=cf.read(),
-                    file_name=output_csv_filename,
-                    mime="text/csv"
-                )
+            if generated_csv:
+                with open(generated_csv[0], "rb") as cf:
+                    d_col2.download_button(
+                        label="🛡️ Download Quarantine Audit (.csv)",
+                        data=cf.read(),
+                        file_name=os.path.basename(generated_csv[0]),
+                        mime="text/csv"
+                    )
 
-            with open(output_parquet_filename, "rb") as pf:
-                d_col3.download_button(
-                    label="⚡ Download Parquet Mirror (.parquet)",
-                    data=pf.read(),
-                    file_name=output_parquet_filename,
-                    mime="application/octet-stream"
-                )
+            if generated_parquet:
+                with open(generated_parquet[0], "rb") as pf:
+                    d_col3.download_button(
+                        label="⚡ Download Parquet Mirror (.parquet)",
+                        data=pf.read(),
+                        file_name=os.path.basename(generated_parquet[0]),
+                        mime="application/octet-stream"
+                    )
+        except subprocess.TimeoutExpired:
+            st.error("⏱️ Pipeline execution timed out!")
         except Exception as ex:
             st.error(f"⚠️ Execution Error: {ex}")
