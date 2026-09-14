@@ -595,11 +595,11 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c1.add_data(Reference(ws_calc, min_col=2, min_row=1, max_row=len(unique_dim1)+1), titles_from_data=True)
         c1.set_categories(Reference(ws_calc, min_col=1, min_row=2, max_row=len(unique_dim1)+1))
         ws_dash.add_chart(c1, 'A6')
-
-    # Chart 2: Clean Vertical Column (No Bottom Clashing Legend)
+# Chart 2: Strictly Vertical Column (No Squashed Text)
     if unique_dim2:
         c2 = BarChart()
-        c2.type = 'col'
+        c2.type = "col"
+        c2.grouping = "standard"
         c2.style = 10
         c2.height = 6.8
         c2.width = 13.8
@@ -611,11 +611,11 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c2.x_axis.delete = False
         c2.y_axis.majorGridlines = None
         c2.x_axis.majorGridlines = None
+        c2.x_axis.textRotation = 0
 
         c2.add_data(Reference(ws_calc, min_col=5, min_row=1, max_row=len(unique_dim2)+1), titles_from_data=True)
         c2.set_categories(Reference(ws_calc, min_col=4, min_row=2, max_row=len(unique_dim2)+1))
         ws_dash.add_chart(c2, "H6")
-
     # Benchmark Matrix
     z3_start = 21
     ws_dash.merge_cells(f'A{z3_start}:F{z3_start}')
