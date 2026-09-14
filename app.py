@@ -67,12 +67,14 @@ with tab_demo:
         st.session_state["uploaded_data"] = f
         st.success("Enterprise demo data ready!")
 
+# Resolve active file
 uploaded_file = up_file if up_file is not None else st.session_state.get("uploaded_data")
 
 if uploaded_file is None:
     st.info("👆 Please upload a file, paste CSV data, or load demo data above to proceed.")
     st.stop()
 
+# --- PREVIEW & VALIDATION PIPELINE ---
 uploaded_file.seek(0)
 st.write("---")
 
@@ -87,11 +89,13 @@ except Exception as e:
     st.error(f"File read error: {e}")
     st.stop()
 
+# Guard: Detect pre-generated dashboards
 sample_cols = [str(c).lower() for c in df_preview.columns]
 if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.isnull().sum().sum() / (df_preview.size or 1)) > 0.8:
     st.error("⚠️ Invalid Raw Data: Raw transactional dataset upload karein.")
     st.stop()
 
+# --- 3-CARD ENTERPRISE HEALTH METRICS ---
 st.subheader("📊 Dataset Overview & Preview")
 total_cells = df_preview.size
 null_cells = df_preview.isnull().sum().sum()
@@ -103,77 +107,70 @@ col2.metric("Total Features / Columns", f"{len(df_preview.columns):,}")
 col3.metric("Data Health / Integrity", f"{clean_ratio:.1f}%", delta=f"{clean_ratio:.1f}% Clean")
 
 st.dataframe(df_preview.head(10), use_container_width=True)
+
 st.write("---")
 
+# --- COMPILATION & EXECUTION ENGINE (Direct Native Execution) ---
 if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
     with st.spinner("Executing Autonomous Pipeline (v71.0 Enterprise Master)..."):
         try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                file_extension = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
-                temp_input_path = os.path.join(tmp_dir, f"input_dataset{file_extension}")
-                
-                uploaded_file.seek(0)
-                file_bytes = uploaded_file.read()
-                
-                with open(temp_input_path, "wb") as f_out:
-                    f_out.write(file_bytes)
-                    f_out.flush()
-                    os.fsync(f_out.fileno())
-                
-                cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input_path]
-                
-                process_res = subprocess.run(
-                    cmd, 
-                    capture_output=True, 
-                    text=True, 
-                    cwd=os.getcwd(),
-                    timeout=30
+            import sys
+            if os.getcwd() not in sys.path:
+                sys.path.append(os.getcwd())
+            
+            import pipeline_v71_DYNAMIC as pipeline
+            
+            uploaded_file.seek(0)
+            input_filename = "input_dataset.csv" if uploaded_file.name.lower().endswith(".csv") else "input_dataset.xlsx"
+            
+            with open(input_filename, "wb") as f_out:
+                f_out.write(uploaded_file.read())
+                f_out.flush()
+            
+            if hasattr(pipeline, "run_pipeline"):
+                pipeline.run_pipeline(input_filename)
+            else:
+                with open("pipeline_v71_DYNAMIC.py", "rb") as pf:
+                    code_obj = compile(pf.read(), "pipeline_v71_DYNAMIC.py", "exec")
+                    namespace = {"__file__": "pipeline_v71_DYNAMIC.py", "__name__": "__main__"}
+                    exec(code_obj, namespace)
+
+            generated_excel = glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
+            generated_csv = glob.glob("*Audit*.csv") or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
+            generated_parquet = glob.glob("*.parquet")
+
+            if not generated_excel:
+                st.error("⚠️ Pipeline executed but Executive Suite .xlsx output was not found.")
+                st.stop()
+
+            st.success("✅ Audit Suite compiled successfully!")
+
+            d_col1, d_col2, d_col3 = st.columns(3)
+
+            with open(generated_excel[0], "rb") as ef:
+                d_col1.download_button(
+                    label="📥 Download Executive Suite (.xlsx)",
+                    data=ef.read(),
+                    file_name=os.path.basename(generated_excel[0]),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                
-                if process_res.returncode != 0:
-                    st.error("❌ Compilation Pipeline Failed:")
-                    st.code(process_res.stderr or process_res.stdout)
-                    st.stop()
 
-                generated_excel = glob.glob(os.path.join(tmp_dir, "*Executive*.xlsx")) or glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
-                generated_csv = glob.glob(os.path.join(tmp_dir, "*Audit*.csv")) or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
-                generated_parquet = glob.glob(os.path.join(tmp_dir, "*.parquet")) or glob.glob("*.parquet")
-
-                if not generated_excel:
-                    st.error("⚠️ Pipeline executed but output artifacts were not found.")
-                    st.code(process_res.stdout)
-                    st.stop()
-
-                st.success("✅ Audit Suite compiled successfully!")
-
-                d_col1, d_col2, d_col3 = st.columns(3)
-
-                with open(generated_excel[0], "rb") as ef:
-                    d_col1.download_button(
-                        label="📥 Download Executive Suite (.xlsx)",
-                        data=ef.read(),
-                        file_name=os.path.basename(generated_excel[0]),
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if generated_csv:
+                with open(generated_csv[0], "rb") as cf:
+                    d_col2.download_button(
+                        label="🛡️ Download Quarantine Audit (.csv)",
+                        data=cf.read(),
+                        file_name=os.path.basename(generated_csv[0]),
+                        mime="text/csv"
                     )
 
-                if generated_csv:
-                    with open(generated_csv[0], "rb") as cf:
-                        d_col2.download_button(
-                            label="🛡️ Download Quarantine Audit (.csv)",
-                            data=cf.read(),
-                            file_name=os.path.basename(generated_csv[0]),
-                            mime="text/csv"
-                        )
-
-                if generated_parquet:
-                    with open(generated_parquet[0], "rb") as pf:
-                        d_col3.download_button(
-                            label="⚡ Download Parquet Mirror (.parquet)",
-                            data=pf.read(),
-                            file_name=os.path.basename(generated_parquet[0]),
-                            mime="application/octet-stream"
-                        )
-        except subprocess.TimeoutExpired:
-            st.error("⏱️ Pipeline execution timed out!")
+            if generated_parquet:
+                with open(generated_parquet[0], "rb") as pf:
+                    d_col3.download_button(
+                        label="⚡ Download Parquet Mirror (.parquet)",
+                        data=pf.read(),
+                        file_name=os.path.basename(generated_parquet[0]),
+                        mime="application/octet-stream"
+                    )
         except Exception as ex:
             st.error(f"⚠️ Execution Error: {ex}")
