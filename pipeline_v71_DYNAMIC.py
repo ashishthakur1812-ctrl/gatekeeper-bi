@@ -51,12 +51,7 @@ def get_or_create_contract(csv_path: str) -> dict:
     current_columns = set(df_sample.columns)
 
     if os.path.exists(contract_path):
-        with open(contract_path, "r", encoding="utf-8") as f:
-            cached = json.load(f)
-        req_cols = {cached["primary_dimension"]} | {k["column"] for k in cached["kpis"]}
-        if req_cols.issubset(current_columns):
-            print(f"[CACHE] Semantic contract locked: {contract_path}")
-            return cached
+        os.remove(contract_path)
 
     print("[ANALYST] Formulating contract with Gemini Flash-Lite Router...")
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
