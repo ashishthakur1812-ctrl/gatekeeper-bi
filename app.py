@@ -97,9 +97,17 @@ if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.is
     st.stop()
 
 st.subheader("📊 Dataset Overview & Preview")
-col1, col2 = st.columns(2)
+
+# --- 3-CARD ENTERPRISE HEALTH METRICS ---
+total_cells = df_preview.size
+null_cells = df_preview.isnull().sum().sum()
+clean_ratio = ((total_cells - null_cells) / total_cells * 100) if total_cells > 0 else 0
+
+col1, col2, col3 = st.columns(3)
 col1.metric("Total Records", f"{len(df_preview):,}")
 col2.metric("Total Features / Columns", f"{len(df_preview.columns):,}")
+col3.metric("Data Health / Integrity", f"{clean_ratio:.1f}%", delta=f"{clean_ratio:.1f}% Clean")
+
 st.dataframe(df_preview.head(10), use_container_width=True)
 
 st.write("---")
