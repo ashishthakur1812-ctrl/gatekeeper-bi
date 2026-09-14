@@ -20,9 +20,6 @@ from openpyxl.chart.data_source import AxDataSource, StrData, StrRef, StrVal, Nu
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 
-
-# Validation policy is intentionally explicit so a deployment can change these
-# values without changing the circuit-breaker implementation.
 GRACEFUL_DEFAULTS: Dict[str, object] = {
     'city': 'Unknown',
     'category': 'Uncategorized',
@@ -32,7 +29,6 @@ FATAL_CORRUPTION_THRESHOLD_PERCENT = 5.0
 PRIMARY_KEY_PATTERN = r'(?:^|[_\s-])(?:id|key|uuid|code|sku|account|record)(?:[_\s-]|$)'
 NON_NEGATIVE_METRIC_PATTERN = r'(?:amount|amt|metric|measure|value|revenue|price|cost|total|quantity|qty|count|score|salary)'
 
-
 @dataclass(frozen=True)
 class ValidationResult:
     dataframe: pd.DataFrame
@@ -40,12 +36,10 @@ class ValidationResult:
     fatal_corrupt_rows: int
     status: str
 
-
 def _matching_columns(columns: pd.Index, configured: Sequence[str]) -> pd.Index:
     configured_index = pd.Index(configured, dtype='object').astype(str).str.casefold()
     normalized_columns = pd.Series(columns, index=columns, dtype='object').astype(str).str.casefold()
     return normalized_columns[normalized_columns.isin(configured_index)].index
-
 
 def _resolve_primary_key(df: pd.DataFrame, primary_key: Optional[str]) -> Optional[str]:
     if primary_key in df.columns:
@@ -54,22 +48,17 @@ def _resolve_primary_key(df: pd.DataFrame, primary_key: Optional[str]) -> Option
     candidates = normalized[normalized.str.contains(PRIMARY_KEY_PATTERN, case=False, regex=True)].index
     return str(candidates[0]) if len(candidates) else None
 
-
 def _resolve_non_negative_metrics(df: pd.DataFrame, primary_key: Optional[str]) -> pd.Index:
     numeric_columns = df.select_dtypes(include=np.number).columns
     normalized = pd.Series(numeric_columns, index=numeric_columns, dtype='object').astype(str)
     metric_columns = normalized[normalized.str.contains(NON_NEGATIVE_METRIC_PATTERN, case=False, regex=True)].index
     if primary_key is not None:
         metric_columns = metric_columns[metric_columns != primary_key]
-    # Whitelist Financial Metrics (Allow negatives only for P&L / Margins)
     fin_pat = r'(?:revenue|profit|margin|loss|variance|pnl|ebitda|delta|net|earnings|income)'
     metric_columns = metric_columns[~metric_columns.str.contains(fin_pat, case=False, regex=True)]
     return metric_columns
 
-
 def _write_validation_log(*args, **kwargs):
-    import os
-    from pathlib import Path
     if len(args) >= 8:
         output_dir, base_stem, raw_count, clean_count, soft_imp, fatal_corr, proc_time, status = args[:8]
     elif len(args) == 7:
@@ -90,14 +79,7 @@ def _write_validation_log(*args, **kwargs):
     log_file_name = f"{base_stem}_Run_Summary_Log.txt"
     log_file_path = os.path.join(output_dir, log_file_name)
     with open(log_file_path, 'w', encoding='utf-8') as f:
-        f.write(f"Dataset Signature: {base_stem}\n")
-        f.write(f"Total Rows Ingested: {raw_count}\n")
-        f.write(f"Total Rows Exported: {clean_count}\n")
-        f.write(f"Soft Imputations Applied: {soft_imp}\n")
-        f.write(f"Fatal Corrupt Rows Blocked: {fatal_corr}\n")
-        f.write(f"Total Processing Time (seconds): {float(proc_time):.2f}\n")
-        f.write(f"Status: {status}\n")
-
+        f.write(f"Dataset Signature: {base_stem}\nTotal Rows Ingested: {raw_count}\nTotal Rows Exported: {clean_count}\nSoft Imputations Applied: {soft_imp}\nFatal Corrupt Rows Blocked: {fatal_corr}\nTotal Processing Time (seconds): {float(proc_time):.2f}\nStatus: {status}\n")
 
 def validate_with_circuit_breaker(
     df: pd.DataFrame,
@@ -108,7 +90,6 @@ def validate_with_circuit_breaker(
     numeric_bound_columns: Optional[Sequence[str]] = None,
     started_at: Optional[float] = None,
 ) -> ValidationResult:
-    """Apply vectorized soft defaults and enforce fatal data-quality invariants."""
     validation_df = df.copy()
     os.makedirs(output_dir, exist_ok=True)
     started = time.perf_counter() if started_at is None else started_at
@@ -123,10 +104,7 @@ def validate_with_circuit_breaker(
 
     resolved_key = _resolve_primary_key(validation_df, primary_key)
     inferred_critical = _resolve_non_negative_metrics(validation_df, resolved_key)
-    configured_critical = _matching_columns(
-        validation_df.columns,
-        inferred_critical if critical_columns is None else critical_columns,
-    )
+    configured_critical = _matching_columns(validation_df.columns, inferred_critical if critical_columns is None else critical_columns)
     critical = configured_critical.union(pd.Index([resolved_key])) if resolved_key else configured_critical
     critical_null_mask = validation_df.loc[:, critical].isna().any(axis=1) if len(critical) else pd.Series(False, index=validation_df.index)
 
@@ -137,29 +115,18 @@ def validate_with_circuit_breaker(
 
     fatal_corrupt_rows = int(fatal_mask.sum())
     
-    # Audit trail: Tag reason for quarantine before export
     if fatal_corrupt_rows > 0:
-        _reasons = []
-        for idx in validation_df[fatal_mask].index:
-            r = []
-            if critical_null_mask.loc[idx]:
-                r.append("CRITICAL_NULL")
-            if duplicate_mask.loc[idx]:
-                r.append("DUPLICATE_KEY")
-            if bound_mask.loc[idx]:
-                r.append("NEGATIVE_VALUE_VIOLATION")
-            _reasons.append("; ".join(r) if r else "ANOMALY")
-        
         quarantine_export_df = validation_df.loc[fatal_mask].copy()
-        quarantine_export_df.insert(0, "Quarantine_Reason", _reasons)
     else:
         quarantine_export_df = validation_df.iloc[0:0].copy()
+        
     total_rows = len(validation_df)
     fatal_percentage = (fatal_corrupt_rows / total_rows * 100.0) if total_rows else 0.0
-    os.makedirs('quarantine', exist_ok=True); _q_stem = os.path.splitext(os.path.basename(globals().get('CURRENT_INPUT_FILE') or globals().get('file_input') or 'records'))[0]; quarantine_path = os.path.join('quarantine', f'{_q_stem}_quarantine.csv')
+    os.makedirs('quarantine', exist_ok=True)
+    _q_stem = os.path.splitext(os.path.basename(globals().get('CURRENT_INPUT_FILE') or globals().get('file_input') or 'records'))[0]
+    quarantine_path = os.path.join('quarantine', f'{_q_stem}_quarantine.csv')
     elapsed_seconds = max(0.0, time.perf_counter() - started)
 
-    # Production-Grade Adaptive Circuit Breaker
     is_small_batch = total_rows <= 50
     is_breached = (fatal_percentage > 50.0 or (total_rows - fatal_corrupt_rows) < 2) if is_small_batch else (fatal_percentage > FATAL_CORRUPTION_THRESHOLD_PERCENT)
 
@@ -175,10 +142,6 @@ def validate_with_circuit_breaker(
         status = 'PARTIAL SUCCESS (QUARANTINED)'
     _write_validation_log(output_dir, ingested_rows, len(clean_df), soft_imputations, fatal_corrupt_rows, elapsed_seconds, status)
     return ValidationResult(clean_df, soft_imputations, fatal_corrupt_rows, status)
-
-# ==============================================================================
-# MODULE 1: COMPOSITE DE-COUPLER & INGESTION FIREWALL
-# ==============================================================================
 
 def clean_file_path(path_str):
     if not path_str: return ""
@@ -261,19 +224,8 @@ def clean_dataframe(df):
     cleaned = df.copy()
     cleaned.columns = [str(c).strip().replace('\n', ' ') for c in cleaned.columns]
     initial_count = len(cleaned)
-    cols = list(cleaned.columns)
 
-    # De-couple composite text values (e.g. '28450 Active' -> Billing=28450, Status=Active)
-    for r_i in range(len(cleaned)):
-        for c_i in range(len(cols) - 1):
-            val_str = str(cleaned.iat[r_i, c_i]).strip()
-            # Match number + string pattern
-            m = re.match(r'^([₹$â‚¹\s\d,.\-]+)\s+([A-Za-z].*)$', val_str)
-            if m:
-                cleaned.iat[r_i, c_i] = m.group(1).strip()
-                if pd.isna(cleaned.iat[r_i, c_i + 1]) or str(cleaned.iat[r_i, c_i + 1]).strip() == '':
-                    cleaned.iat[r_i, c_i + 1] = m.group(2).strip()
-
+    # FAST VECTORIZED STRING CLEANING (Replaced slow row iteration)
     for col in cleaned.columns:
         col_low = str(col).lower()
         is_code = any(k in col_low for k in ['id', 'code', 'pin', 'zip', 'key', 'sku', 'inv', 'uuid', 'sl_no', 'vin', 'phone', 'account', 'no.', 'unit'])
@@ -285,28 +237,23 @@ def clean_dataframe(df):
             
         if cleaned[col].dtype == object or pd.api.types.is_string_dtype(cleaned[col]):
             s = cleaned[col]
-            
             if any(k in col_low for k in ['date', 'time', 'day', 'period', 'ts', 'timestamp']):
                 parsed = pd.to_datetime(s.astype(str).str.replace(r'[_/]', '-', regex=True), format='mixed', errors='coerce')
                 if parsed.notna().sum() >= (0.3 * len(cleaned)):
                     cleaned[col] = parsed.dt.strftime('%Y-%m-%d')
                     continue
                     
-            s_num = s.astype(str).apply(lambda x: re.sub(r'[^\d.\-]', '', str(x)) if pd.notna(x) and str(x).strip() != '' else np.nan)
+            s_num = s.astype(str).str.replace(r'[^\d.\-]', '', regex=True)
             converted = pd.to_numeric(s_num, errors='coerce')
             if converted.notna().sum() >= (0.5 * len(cleaned)):
                 cleaned[col] = converted
                 continue
                 
-            cleaned[col] = s.dropna().astype(str).apply(lambda x: ' '.join(str(x).replace('_', ' ').replace('-', ' ').split()).title() if str(x).strip() not in ['', 'Nan'] else np.nan)
+            cleaned[col] = s.dropna().astype(str).str.replace('_', ' ').str.replace('-', ' ').str.title()
             
     cleaned.dropna(how='all', inplace=True)
     cleaned.drop_duplicates(inplace=True)
     return cleaned, initial_count - len(cleaned)
-
-# ==============================================================================
-# MODULE 2: MATHEMATICAL GATE & ALGEBRAIC PROFILER (NUMERIC FIRST)
-# ==============================================================================
 
 def profile_algebraic_types(df):
     schema = {
@@ -318,8 +265,7 @@ def profile_algebraic_types(df):
         'Metric_Aggregations': {}
     }
     n_rows = len(df)
-    if n_rows == 0:
-        return schema
+    if n_rows == 0: return schema
 
     for col in df.columns:
         col_str = str(col).strip()
@@ -327,17 +273,14 @@ def profile_algebraic_types(df):
         series = df[col].dropna()
         series = series[series != '']
         n_unique = series.nunique()
-        if n_unique == 0:
-            continue
+        if n_unique == 0: continue
 
         uniqueness_ratio = n_unique / n_rows
 
-        # Rule 1: Temporal Gate
         if any(k in col_low for k in ['date', 'time', 'ts', 'timestamp', 'period', 'month', 'year']) or pd.api.types.is_datetime64_any_dtype(series):
             schema['Temporal_Dims'].append(col_str)
             continue
 
-        # Rule 2: Explicit ID / Pincode Keyword Gate
         if any(k in col_low for k in ['id', 'code', 'pin', 'zip', 'key', 'sku', 'phone', 'account', 'unit']):
             if 2 <= n_unique <= 15 and uniqueness_ratio < 0.40:
                 schema['Categorical_Dims'].append(col_str)
@@ -345,38 +288,25 @@ def profile_algebraic_types(df):
                 schema['Identifier_Keys'].append(col_str)
             continue
 
-        # Rule 3: Pure Numeric Classification & Mathematical Traps Guard
         if pd.api.types.is_numeric_dtype(series):
-            # Trap A: Unlabeled Serial / Key / Pincode
             if (uniqueness_ratio > 0.85 and len(series) > 50) and (series.dtype in ['int64', 'int32', 'int16', 'int8']) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total', 'age']):
                 schema['Identifier_Keys'].append(col_str)
                 continue
 
-            # Trap B: Discrete State Code
             if (series.dtype in ['int64', 'int32']) and (2 <= n_unique <= 6) and (len(series) > 50) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total']):
                 schema['Categorical_Dims'].append(col_str)
                 continue
 
-            c_min = float(series.min())
-            c_max = float(series.max())
+            c_min, c_max = float(series.min()), float(series.max())
             c_mean = float(series.mean()) if len(series) > 0 else 0.0
             c_std = float(series.std()) if len(series) > 1 else 0.0
             cv = (c_std / abs(c_mean)) if c_mean != 0 else 1.0
-            skew = float(series.skew()) if len(series) > 2 else 0.0
 
-            # Extensive Additive (Volume, Currency, Quantities) -> Always SUM
-            is_extensive = any(k in col_low for k in ['sales', 'revenue', 'cost', 'spend', 'expense', 'profit', 'volume', 'qty', 'quantity', 'units', 'amount', 'total', 'gmv', 'loss', 'count'])
-
-            # Bounded Intensive (Scores, Ratings, Percentages) -> Always AVERAGE
+            is_extensive = any(k in col_low for k in ['sales', 'revenue', 'cost', 'spend', 'expense', 'profit', 'volume', 'qty', 'quantity', 'units', 'amount', 'total', 'gmv', 'loss', 'count', 'ctc', 'salary'])
             is_ratio = (c_min >= -1.0) and (c_max <= 1.0) and (series.dtype in ['float64', 'float32'])
             is_pct_rate = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['pct', 'percent', 'rate', 'ratio', 'margin', 'efficiency'])
             is_rating_score = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['score', 'rating', 'stars', 'grade', 'index', 'nps', 'csat'])
-
-            # Latency/Duration -> MEDIAN
             is_latency = any(k in col_low for k in ['delay', 'duration', 'latency', 'tat', 'stay', 'wait', 'ping', 'transit', 'lead_time'])
-
-            # Steady sensor / low CV
-            is_steady = (cv < 0.15) and (c_min > 0) and not is_extensive
 
             if is_extensive:
                 schema['Additive_Measures'].append(col_str)
@@ -387,112 +317,17 @@ def profile_algebraic_types(df):
             elif is_latency:
                 schema['Intensive_Measures'].append(col_str)
                 schema['Metric_Aggregations'][col_str] = 'MEDIAN'
-            elif is_steady:
-                schema['Intensive_Measures'].append(col_str)
-                schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-            elif (abs(skew) > 1.2) and (series.dtype in ['float64', 'float32']) and not is_extensive:
-                schema['Intensive_Measures'].append(col_str)
-                schema['Metric_Aggregations'][col_str] = 'AVERAGE'
             else:
                 schema['Additive_Measures'].append(col_str)
                 schema['Metric_Aggregations'][col_str] = 'SUM'
             continue
 
-        # Rule 4: Categorical Text Dimensions
         if 2 <= n_unique <= 30 and (uniqueness_ratio < 0.90 or n_rows <= 50):
             schema['Categorical_Dims'].append(col_str)
         else:
             schema['Identifier_Keys'].append(col_str)
 
     return schema
-
-    for col in df.columns:
-        col_str = str(col).strip()
-        col_low = col_str.lower()
-        series = df[col].dropna()
-        series = series[series != '']
-        n_unique = series.nunique()
-        if n_unique == 0:
-            continue
-
-        uniqueness_ratio = n_unique / n_rows
-
-        # Rule 1: Temporal Gate
-        if any(k in col_low for k in ['date', 'time', 'ts', 'timestamp', 'period', 'month', 'year']) or pd.api.types.is_datetime64_any_dtype(series):
-            schema['Temporal_Dims'].append(col_str)
-            continue
-
-        # Rule 2: Explicit ID / Pincode Keyword Gate
-        if any(k in col_low for k in ['id', 'code', 'pin', 'zip', 'key', 'sku', 'phone', 'account', 'unit']):
-            if 2 <= n_unique <= 15 and uniqueness_ratio < 0.40:
-                schema['Categorical_Dims'].append(col_str)
-            else:
-                schema['Identifier_Keys'].append(col_str)
-            continue
-
-        # Rule 3: Pure Numeric Classification & Mathematical Traps Guard
-        if pd.api.types.is_numeric_dtype(series):
-            # Trap A: Unlabeled Serial / Key / Pincode (High uniqueness integer)
-            if (uniqueness_ratio > 0.85 and len(series) > 50) and (series.dtype in ['int64', 'int32', 'int16', 'int8']) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total', 'age']):
-                schema['Identifier_Keys'].append(col_str)
-                continue
-
-            # Trap B: Discrete State Code (Status 200, 404, 500 or State 1, 2, 3)
-            if (series.dtype in ['int64', 'int32']) and (2 <= n_unique <= 6) and (len(series) > 50) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total']):
-                schema['Categorical_Dims'].append(col_str)
-                continue
-
-            c_min = float(series.min())
-            c_max = float(series.max())
-            c_mean = float(series.mean()) if len(series) > 0 else 0.0
-            c_std = float(series.std()) if len(series) > 1 else 0.0
-            cv = (c_std / abs(c_mean)) if c_mean != 0 else 1.0
-            skew = float(series.skew()) if len(series) > 2 else 0.0
-
-            # Rule A: Explicit Extensive Measures (Additive Volumes / Amounts always SUM)
-        is_extensive = any(k in col_low for k in ['sales', 'revenue', 'cost', 'spend', 'expense', 'profit', 'volume', 'qty', 'quantity', 'units', 'amount', 'total', 'gmv', 'loss', 'count'])
-        
-        # Rule B: Bounded Ratings, Scores & Percentages (Intensive always AVERAGE)
-        is_ratio = (c_min >= -1.0) and (c_max <= 1.0) and (series.dtype in ['float64', 'float32'])
-        is_pct_rate = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['pct', 'percent', 'rate', 'ratio', 'margin', 'efficiency'])
-        is_rating_score = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['score', 'rating', 'stars', 'grade', 'index', 'nps', 'csat'])
-        
-        # Rule C: Time/Latency Metrics (Intensive MEDIAN)
-        is_latency = any(k in col_low for k in ['delay', 'duration', 'latency', 'tat', 'stay', 'wait', 'ping', 'transit', 'lead_time'])
-        
-        # Rule D: Steady-State Sensor (Low Dispersion CV < 0.15)
-        is_steady = (cv < 0.15) and (c_min > 0) and not is_extensive
-
-        if is_extensive:
-            schema['Additive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'SUM'
-        elif is_ratio or is_pct_rate or is_rating_score:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        elif is_latency:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'MEDIAN'
-        elif is_steady:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        elif (abs(skew) > 1.2) and (series.dtype in ['float64', 'float32']) and not is_extensive:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        else:
-            schema['Additive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'SUM'
-        continue
-
-        # Rule 4: Categorical Text Dimensions
-        if 2 <= n_unique <= 30 and (uniqueness_ratio < 0.90 or n_rows <= 50):
-            schema['Categorical_Dims'].append(col_str)
-        else:
-            schema['Identifier_Keys'].append(col_str)
-
-    return schema
-
-# MODULE 3: SECTOR ONTOLOGY & EXECUTIVE DIAGNOSTIC
-# ==============================================================================
 
 SECTOR_THEMES = {
     'HEALTHCARE_CLINICAL': {'header_fill': '134E4A', 'sub_fill': '115E59', 'accent_fill': '0D9488', 'card_bg': 'F0FDFA', 'filter_bg': 'CCFBF1', 'badge_top': 'D1FAE5', 'badge_lag': 'FFE4E6', 'title_color': '134E4A'},
@@ -562,12 +397,10 @@ def diagnose_root_cause(df, dim1, metric, agg_type, opt_goal="MAX"):
         agg_d1 = _res[1] if isinstance(_res, tuple) else _res
         if len(agg_d1) > 1:
             if opt_goal == "MIN":
-                # For MIN metrics, highest cost cohort is the laggard / cost-drag
                 lag_dim1, lag_val, tot_val = str(agg_d1.index[0]), float(agg_d1.iloc[0]), float(agg_d1.sum())
                 lag_share = (lag_val / tot_val) * 100.0 if tot_val > 0 else 0
                 return f"Primary cost concentration localized in '{lag_dim1}', driving {lag_share:.1f}% of total expenditure.", lag_dim1
             else:
-                # For MAX metrics, lowest volume cohort is the underperformer
                 lag_dim1, lag_val, tot_val = str(agg_d1.index[-1]), float(agg_d1.iloc[-1]), float(agg_d1.sum())
                 lag_share = (lag_val / tot_val) * 100.0 if tot_val > 0 else 0
                 return f"Lagging throughput localized in '{lag_dim1}', capturing only {lag_share:.1f}% of throughput.", lag_dim1
@@ -590,26 +423,21 @@ def generate_nlg_executive_summary(df, profile):
         diag_str, lag_dim = diagnose_root_cause(valid_df, dim1, metric, agg_type, opt_goal)
 
         if opt_goal == "MIN":
-            top_d1_name = str(agg_d1.index[-1]) # Lowest expenditure is top efficiency leader
+            top_d1_name = str(agg_d1.index[-1])
             action_str = f"Action Directive: Operational efficiency benchmark governed by '{top_d1_name}'. Recommended budget containment audit for high-cost cohort '{lag_dim}'." if lag_dim else "Action Directive: Cost structures operating within target parameters."
             lead_line = f"• Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, anchored by efficiency leader '{top_d1_name}'."
         else:
-            top_d1_name = str(agg_d1.index[0]) # Highest volume is growth leader
+            top_d1_name = str(agg_d1.index[0])
             action_str = f"Action Directive: Immediate operational audit recommended for '{lag_dim}' to optimize resource allocation and prevent further lag." if lag_dim else "Action Directive: Maintain current operational bandwidth and scale successful cohorts."
             lead_line = f"• Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, spearheaded by '{top_d1_name}'."
 
-        lines = [
+        return [
             lead_line,
             f"• Root-Cause & Strategic Diagnostic: {diag_str}",
             f"• {action_str}"
         ]
-        return lines
     except:
         return ["• Executive Overview: Pipeline processed with aggregate metrics."]
-
-# ==============================================================================
-# MODULE 4: PREDICTIVE FORECAST ENGINE (DYNAMIC RESOLUTION)
-# ==============================================================================
 
 def generate_predictive_forecast_sheet(wb, df, profile):
     metric_col, date_col, m_agg = profile.get('primary_measure'), profile.get('temporal_dim'), profile.get('primary_agg')
@@ -703,21 +531,11 @@ def generate_predictive_forecast_sheet(wb, df, profile):
     s1.graphicalProperties.line.solidFill = "0284C7"
     ws_fc.add_chart(c_fc, "E4")
 
-# ==============================================================================
-# MODULE 5: PRODUCTION DASHBOARD ENGINE (EXECUTIVE RENDERER)
-# ==============================================================================
-
-def get_agg_form(func, col, d1, d2, r_start, r_end):
-    core_f = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{col}{r_start}:{col}{r_end}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2}{r_start}:{d2}{r_end}, Executive_Dashboard!$M$1, Cleaned_Data!{col}{r_start}:{col}{r_end}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1}{r_start}:{d1}{r_end}, Executive_Dashboard!$J$1, Cleaned_Data!{col}{r_start}:{col}{r_end}), {func}IFS(Cleaned_Data!{col}{r_start}:{col}{r_end}, Cleaned_Data!{d1}{r_start}:{d1}{r_end}, Executive_Dashboard!$J$1, Cleaned_Data!{d2}{r_start}:{d2}{r_end}, Executive_Dashboard!$M$1))))'
-    return f'=IFERROR({core_f}, 0)'
-
-
 def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) -> dict:
     os.makedirs("contracts", exist_ok=True)
     stem = Path(file_path).stem.replace("_Gatekeeper_Dashboard", "").replace("_Cleaned", "")
     contract_path = Path("contracts") / f"{stem}_contract.json"
     
-    # Return existing contract if present (Allows zero-code manual overrides)
     if contract_path.exists():
         try:
             with open(contract_path, "r", encoding="utf-8") as f:
@@ -725,21 +543,14 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
         except Exception:
             pass
             
-    # Heuristic determination of currency & polarity
     p_meas = math_profile.get('primary_measure', '')
     p_meas_lower = p_meas.lower()
     
-    # Currency determination
-    if any(k in p_meas_lower for k in ["inr", "rupee", "rs"]):
-        curr = ""
-    elif any(k in p_meas_lower for k in ["usd", "dollar", "cost", "price", "revenue", "spend"]):
-        curr = "$"
-    elif any(k in p_meas_lower for k in ["eur", "euro"]):
-        curr = "€"
-    else:
-        curr = ""
+    if any(k in p_meas_lower for k in ["inr", "rupee", "rs"]): curr = ""
+    elif any(k in p_meas_lower for k in ["usd", "dollar", "cost", "price", "revenue", "spend"]): curr = "$"
+    elif any(k in p_meas_lower for k in ["eur", "euro"]): curr = "€"
+    else: curr = ""
         
-    # Optimization Goal (Min vs Max)
     if any(k in p_meas_lower for k in ["cost", "expense", "defect", "loss", "delay", "error", "churn", "maintenance"]):
         opt_goal = "MIN"
     else:
@@ -763,7 +574,6 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
     
     with open(contract_path, "w", encoding="utf-8") as f:
         json.dump(contract, f, indent=2)
-    print(f"[CONTRACT] Generated JSON Contract: {contract_path}")
     return contract
 
 def build_universal_dashboard(df, profile, output_path, dropped_count=0):
@@ -782,12 +592,9 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     for row in df.itertuples(index=False, name=None): ws_data.append(list(row))
     num_rows = len(df) + 1
 
-    # FACT 1: FIXED PROFESSIONAL WIDTH (Zero Processing Delay)
     for i in range(len(headers)):
         ws_data.column_dimensions[get_column_letter(i+1)].width = 18
 
-    # FACT 2: NATIVE PREMIUM STYLING (No XML Corruption)
-    from openpyxl.styles import PatternFill, Font
     for cx in ws_data[1]:
         cx.fill = PatternFill(start_color="1F4E78", fill_type="solid")
         cx.font = Font(color="FFFFFF", bold=True)
@@ -855,7 +662,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         lbl = f"{agg_type} {str(metric).upper().replace('_', ' ')}"
         func = 'AVERAGE' if agg_type in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
         fmt = get_math_format(df, metric, agg_type)
-        form = get_agg_form(func, c_let, d1_let, d2_let, 2, num_rows)
+        form = f'=IFERROR(IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{c_let}2:{c_let}{num_rows}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1, Cleaned_Data!{c_let}2:{c_let}{num_rows}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{c_let}2:{c_let}{num_rows}), {func}IFS(Cleaned_Data!{c_let}2:{c_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1)))), 0)'
         cards_data.append((lbl, form, fmt))
 
     mid_r = max(2, (num_rows - 2) // 2 + 2)
@@ -868,8 +675,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     for m_idx, (m_col_k, m_agg_k) in enumerate(profile['kpi_measures'][:3], start=3):
         cl = get_column_letter(headers.index(m_col_k) + 1)
         func = 'AVERAGE' if m_agg_k in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
-        ws_calc[f'G{m_idx}'] = get_agg_form(func, cl, d1_let, d2_let, 2, mid_r-1)
-        ws_calc[f'H{m_idx}'] = get_agg_form(func, cl, d1_let, d2_let, mid_r, num_rows)
+        ws_calc[f'G{m_idx}'] = f'=IFERROR(IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{cl}2:{cl}{mid_r-1}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1, Cleaned_Data!{cl}2:{cl}{mid_r-1}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{cl}2:{cl}{mid_r-1}), {func}IFS(Cleaned_Data!{cl}2:{cl}{mid_r-1}, Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1)))), 0)'
+        ws_calc[f'H{m_idx}'] = f'=IFERROR(IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1, Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), {func}IFS(Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}, Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1)))), 0)'
         ws_calc[f'I{m_idx}'] = f'=IFERROR((H{m_idx} - G{m_idx}) / ABS(G{m_idx}), 0)'
 
     ws_calc['I6'] = '=IFERROR(AVERAGE(I2:I5), 0)'
@@ -908,7 +715,6 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c1.y_axis.delete = False
         c1.x_axis.delete = False
         
-        # Safe Signal Unpacking
         agg_raw = execute_math_agg(df, dim1_col, m1_col, m1_agg)
         agg_preview = agg_raw[0] if isinstance(agg_raw, tuple) else agg_raw
         try:
@@ -923,14 +729,13 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         cardinality_c1 = len(unique_dim1)
         sec_type = profile.get('sector', 'GENERAL_ENTERPRISE')
 
-        # Slot 1 Domain-Aware Decision
         if has_c1_neg:
             c1.type = 'col'
             c1.title = f"Net Variance: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
             c1.y_axis.scaling.min = agg_min * 1.2
             c1.y_axis.scaling.max = agg_max * 1.2 if agg_max > 0 else 0
         elif cardinality_c1 > 6 or sec_type in ['ECOMMERCE_RETAIL', 'LOGISTICS_SUPPLY']:
-            c1.type = 'bar'  # Horizontal prevents label overlap
+            c1.type = 'bar'
             c1.title = f"Performance Ranking: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
             c1.y_axis.scaling.min = 0
             if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
@@ -964,7 +769,6 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
                 c2.type = "col"
             c2.y_axis.delete = False
             c2.y_axis.title = f"{m_meas} ({curr_sym})" if curr_sym else f"{m_meas}"
-            c2.dataLabels.showVal = True
             c2.dataLabels.showVal = False
             c2.dataLabels.showPercent = False
             c2.legend = Legend()
@@ -1020,74 +824,37 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
 
     generate_predictive_forecast_sheet(wb, df, profile)
 
-    # Dynamically apply currency/number formats from contract (No hardcoded dollar overwrite)
-    pass
-
-    try:
-        wb.save(output_path)
-        print(f"\n[SUCCESS] Universal Gatekeeper Dashboard generated: {output_path}")
-    except Exception as e:
-        print(f"\n[Error saving file]: {e}")
+    wb.save(output_path)
+    print(f"\n[SUCCESS] Universal Gatekeeper Dashboard generated: {output_path}")
 
 def process_pipeline(raw_input_path):
     input_path = clean_file_path(raw_input_path)
     started_at = time.perf_counter()
-    print("\n" + "="*68 + "\n   UNIVERSAL 2FA AUTONOMOUS BI ENGINE v71.0 (ENTERPRISE MASTER) \n" + "="*68)
-    
     raw_df = ingest_file(input_path)
-    if raw_df is None or raw_df.empty: return print("[Error] Invalid data or incorrect file path.")
+    if raw_df is None or raw_df.empty: return
     clean_df, dropped = clean_dataframe(raw_df)
-    global CURRENT_INPUT_FILE; CURRENT_INPUT_FILE = input_path; validation = validate_with_circuit_breaker(
+    global CURRENT_INPUT_FILE; CURRENT_INPUT_FILE = input_path
+    validation = validate_with_circuit_breaker(
         clean_df,
         output_dir='reports',
         total_rows_ingested=len(raw_df),
         started_at=started_at,
     )
     clean_df = validation.dataframe
-    
-    schema = profile_algebraic_types(clean_df)
-    print("\n--- ZERO-GUESSWORK SCHEMA AUDIT ---")
-    print(f" -> Additive Measures (SUM) : {schema['Additive_Measures']}")
-    print(f" -> Intensive Rates (AVG)   : {schema['Intensive_Measures']}")
-    print(f" -> Categorical Dims        : {schema['Categorical_Dims'][:5]}")
-    print(f" -> Temporal Dims (Locked)  : {schema['Temporal_Dims'][:5]}")
-    print("---------------------------------\n")
-    
     profile = build_mathematical_profile(clean_df)
-    os.makedirs('reports', exist_ok=True); base_stem = os.path.splitext(os.path.basename(input_path))[0]; output_name = os.path.join('reports', f'{base_stem}_Gatekeeper_Dashboard.xlsx')
+    
+    os.makedirs('reports', exist_ok=True)
+    base_stem = os.path.splitext(os.path.basename(input_path))[0]
+    output_name = os.path.join('reports', f'{base_stem}_Gatekeeper_Dashboard.xlsx')
     build_universal_dashboard(clean_df, profile, output_name, dropped)
-    _write_validation_log(
-        'reports',
-        base_stem,
-        len(raw_df),
-        len(clean_df),
-        validation.soft_imputations,
-        validation.fatal_corrupt_rows,
-        max(0.0, time.perf_counter() - started_at),
-        validation.status,
-    )
-    # --- AUTOMATED CLEAN PARQUET STORAGE ---
-    try:
-        in_p = raw_input_path if 'raw_input_path' in locals() else (input_path if 'input_path' in locals() else 'dataset')
-        os.makedirs('clean_data', exist_ok=True); pq_path = os.path.join('clean_data', f'{base_stem}_Cleaned.parquet')
-        clean_df.to_parquet(pq_path, index=False)
-        print(f"[STORAGE] Clean Parquet Exported: {pq_path}")
-    except Exception as _err:
-        print(f"[STORAGE ERROR] Parquet save failed: {_err}")
+    _write_validation_log('reports', base_stem, len(raw_df), len(clean_df), validation.soft_imputations, validation.fatal_corrupt_rows, max(0.0, time.perf_counter() - started_at), validation.status)
 
-if __name__ == "__main__":
     try:
-        file_input = sys.argv[1] if len(sys.argv) > 1 else input("Enter CSV/Excel file path: ")
-        process_pipeline(file_input)
-    except Exception as e:
-        import traceback
-        print("\n" + "!"*60)
-        print("   SYSTEM CRASH DETECTED (MATHEMATICAL ENGINE HALTED)   ")
-        print("!"*60)
-        traceback.print_exc()
-        print("!"*60)
-        
-    try:
-        input('\nPress Enter to exit...')
+        os.makedirs('clean_data', exist_ok=True)
+        clean_df.to_parquet(os.path.join('clean_data', f'{base_stem}_Cleaned.parquet'), index=False)
     except Exception:
         pass
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        process_pipeline(sys.argv[1])
