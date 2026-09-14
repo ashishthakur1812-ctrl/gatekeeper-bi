@@ -67,15 +67,12 @@ with tab_demo:
         st.session_state["uploaded_data"] = f
         st.success("Enterprise demo data ready!")
 
-# Resolve active file (Upload precedence over session)
 uploaded_file = up_file if up_file is not None else st.session_state.get("uploaded_data")
 
-# Stop execution if no data is provided
 if uploaded_file is None:
     st.info("👆 Please upload a file, paste CSV data, or load demo data above to proceed.")
     st.stop()
 
-# --- PREVIEW & VALIDATION PIPELINE ---
 uploaded_file.seek(0)
 st.write("---")
 
@@ -90,13 +87,11 @@ except Exception as e:
     st.error(f"File read error: {e}")
     st.stop()
 
-# Guard: Detect pre-generated dashboards
 sample_cols = [str(c).lower() for c in df_preview.columns]
 if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.isnull().sum().sum() / (df_preview.size or 1)) > 0.8:
     st.error("⚠️ Invalid Raw Data: Raw transactional dataset upload karein.")
     st.stop()
 
-# --- 3-CARD ENTERPRISE HEALTH METRICS ---
 st.subheader("📊 Dataset Overview & Preview")
 total_cells = df_preview.size
 null_cells = df_preview.isnull().sum().sum()
@@ -108,10 +103,8 @@ col2.metric("Total Features / Columns", f"{len(df_preview.columns):,}")
 col3.metric("Data Health / Integrity", f"{clean_ratio:.1f}%", delta=f"{clean_ratio:.1f}% Clean")
 
 st.dataframe(df_preview.head(10), use_container_width=True)
-
 st.write("---")
 
-# --- COMPILATION & EXECUTION ENGINE ---
 if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
     with st.spinner("Executing Autonomous Pipeline (v71.0 Enterprise Master)..."):
         try:
@@ -119,7 +112,6 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                 file_extension = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
                 temp_input_path = os.path.join(tmp_dir, f"input_dataset{file_extension}")
                 
-                # Write file safely ensuring flush and pointer reset
                 uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
                 
@@ -128,7 +120,6 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                     f_out.flush()
                     os.fsync(f_out.fileno())
                 
-                # Run subprocess directly with 30s safeguard timeout
                 cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input_path]
                 
                 process_res = subprocess.run(
@@ -144,13 +135,12 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                     st.code(process_res.stderr or process_res.stdout)
                     st.stop()
 
-                # Search artifacts in both temp dir and current working dir
                 generated_excel = glob.glob(os.path.join(tmp_dir, "*Executive*.xlsx")) or glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
                 generated_csv = glob.glob(os.path.join(tmp_dir, "*Audit*.csv")) or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
                 generated_parquet = glob.glob(os.path.join(tmp_dir, "*.parquet")) or glob.glob("*.parquet")
 
                 if not generated_excel:
-                    st.error("⚠️ Pipeline executed but output artifacts were not found in working directory.")
+                    st.error("⚠️ Pipeline executed but output artifacts were not found.")
                     st.code(process_res.stdout)
                     st.stop()
 
@@ -184,6 +174,6 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                             mime="application/octet-stream"
                         )
         except subprocess.TimeoutExpired:
-            st.error("⏱️ Pipeline execution timed out! Script took longer than expected.")
+            st.error("⏱️ Pipeline execution timed out!")
         except Exception as ex:
             st.error(f"⚠️ Execution Error: {ex}")
