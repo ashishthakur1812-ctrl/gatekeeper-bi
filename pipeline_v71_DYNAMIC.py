@@ -312,57 +312,51 @@ def build_mathematical_profile(df):
     chart2_config = {'mode': 'COLUMN_VOLUME', 'dim': sec_dim, 'title': f'Volume Breakdown by {sec_dim}'}
 
     kpi_measures = []
-    for m in filtered_monetary:
-        if len(kpi_measures) < 2: kpi_measures.append((m, math_schema.get('Metric_Aggregations', {}).get(m, 'SUM')))
-    for m in intensive_cands:
-        if len(kpi_measures) < 3: kpi_measures.append((m, math_schema.get('Metric_Aggregations', {}).get(m, 'AVG')))
-    if len(kpi_measures) < 3 and filtered_monetary:
-        for m in filtered_monetary:
-            if m not in [k[0] for k in kpi_measures] and len(kpi_measures) < 3: kpi_measures.append((m, math_schema.get('Metric_Aggregations', {}).get(m, 'SUM')))
-
-    return {
-        'sector': 'GENERAL_ENTERPRISE', 'title': 'AUTONOMOUS EXECUTIVE DASHBOARD', 'vol_label': 'TOTAL RECORDS / UNITS',
-        'macro_dim': macro_dim, 'sec_dim': sec_dim, 'primary_measure': primary_measure, 'primary_agg': primary_agg,
-        'chart1_type': 'col', 'chart2_config': chart2_config, 'kpi_measures': kpi_measures[:3],
-        'palette': SECTOR_THEMES['GENERAL_ENTERPRISE'],
-        'temporal_dim': math_schema['Temporal_Dims'][0] if math_schema['Temporal_Dims'] else None
-    }
-
-def execute_math_agg(df, dim, metric, agg_type):
-    valid_df = df[df[dim].notna() & (df[dim] != '')].copy()
-    if valid_df.empty: return valid_df, pd.Series(dtype=float)
-    valid_df[metric] = pd.to_numeric(valid_df[metric], errors='coerce')
-    agg_func = 'mean' if agg_type == 'AVG' else 'sum'
-    return valid_df, valid_df.groupby(dim)[metric].agg(agg_func).sort_values(ascending=False)
-
-def generate_nlg_executive_summary(df, profile):
-    dim1, metric, agg_type = profile['macro_dim'], profile['primary_measure'], profile['primary_agg']
-    if not dim1 or not metric or df.empty or dim1 not in df.columns:
-        return ["• Pipeline processed securely."]
-    try:
-        valid_df, agg_d1 = execute_math_agg(df, dim1, metric, agg_type)
-        if agg_d1.empty: return ["• Zero net variance across dimensions."]
-        total_val = float(valid_df[metric].mean() if agg_type == 'AVG' else valid_df[metric].sum())
-        top_leader = str(agg_d1.index[0])
-        lag_leader = str(agg_d1.index[-1]) if len(agg_d1) > 1 else None
-        
-        lines = [
-            f"• Core Performance: Aggregate {metric.replace('_', ' ')} reaches {format_compact_num(total_val)}, steered by '{top_leader}'.",
-            f"• Portfolio Analysis: Lower cohort localized in '{lag_leader}' with targeted audit recommended." if lag_leader else "• Portfolio metrics balanced evenly across cohorts.",
-            "• Action Directive: Scale core growth verticals and maintain audit compliance across regional tiers."
-        ]
-        return lines
-    except:
-        return ["• Executive Overview: Pipeline processed with aggregate metrics."]
-
-def generate_predictive_forecast_sheet(wb, df, profile):
-    metric_col, date_col, m_agg = profile.get('primary_measure'), profile.get('temporal_dim'), profile.get('primary_agg')
-    if not metric_col or metric_col not in df.columns: return
+    # --- RESTORING LIVE BHI SCORE & MOMENTUM ENGINE ---
+    mid_r = max(2, (num_rows - 2) // 2 + 2)
+    v_f1 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A2:A{mid_r-1}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1))))'
+    v_f2 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A{mid_r}:A{num_rows}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1))))'
+    ws_calc['G2'] = f'=IFERROR({v_f1}, 0)'
+    ws_calc['H2'] = f'=IFERROR({v_f2}, 0)'
+    ws_calc['I2'] = '=IFERROR((H2 - G2) / ABS(G2), 0)'
     
-    df_temp, has_date = df.copy(), False
-    if date_col:
-        df_temp['__dt'] = pd.to_datetime(df_temp[date_col], errors='coerce')
-        valid_dt = df_temp.dropna(subset=['__dt', metric_col]).copy()
+    for m_idx, (m_col_k, m_agg_k) in enumerate(profile['kpi_measures'][:3], start=3):
+        cl = get_column_letter(headers.index(m_col_k) + 1)
+        func = 'AVERAGE' if m_agg_k in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
+        ws_calc[f'G{m_idx}'] = f'=IFERROR(IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{cl}2:{cl}{mid_r-1}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1, Cleaned_Data!{cl}2:{cl}{mid_r-1}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{cl}2:{cl}{mid_r-1}), {func}IFS(Cleaned_Data!{cl}2:{cl}{mid_r-1}, Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1)))), 0)'
+        ws_calc[f'H{m_idx}'] = f'=IFERROR(IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), {func}(Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), IF(Executive_Dashboard!$J$1="All", {func}IF(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1, Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), IF(Executive_Dashboard!$M$1="All", {func}IF(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}), {func}IFS(Cleaned_Data!{cl}{mid_r}:{cl}{num_rows}, Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1)))), 0)'
+        ws_calc[f'I{m_idx}'] = f'=IFERROR((H{m_idx} - G{m_idx}) / ABS(G{m_idx}), 0)'
+
+    ws_calc['I6'] = '=IFERROR(AVERAGE(I2:I5), 0)'
+    
+    # 1. Green Banner BHI Score Wapas Live
+    ws_dash.merge_cells('G2:N2')
+    ws_dash['G2'] = f'= "📈 BUSINESS HEALTH INDEX: " & ROUND(MIN(100, MAX(0, 50 + (Calculations!I6*100))), 0) & "/100   |   " & IF(Calculations!I6>0, "Expanding ▲", IF(Calculations!I6<0, "Contracting ▼", "Stagnant ◂▸"))'
+    ws_dash['G2'].font = Font(size=8.5, bold=True, color='065F46')
+    ws_dash['G2'].fill = PatternFill(start_color='ECFDF5', fill_type="solid")
+
+    # 2. KPI Cards me Live Dynamic Momentum (Row 5)
+    c_slots = [('A','C'), ('D','F'), ('H','J'), ('L','N')]
+    for idx, (title, formula, num_fmt) in enumerate(cards_data[:4]):
+        cs, ce = c_slots[idx]
+        ws_dash.merge_cells(f'{cs}3:{ce}3')
+        ws_dash[f'{cs}3'] = title
+        ws_dash[f'{cs}3'].font = Font(name="Calibri", size=8.5, bold=True, color="FFFFFF")
+        ws_dash[f'{cs}3'].fill = f_sub
+        ws_dash[f'{cs}3'].alignment = Alignment(horizontal="center")
+        
+        ws_dash.merge_cells(f'{cs}4:{ce}4')
+        ws_dash[f'{cs}4'] = formula
+        ws_dash[f'{cs}4'].font = Font(size=12, bold=True, color=pal['title_color'])
+        ws_dash[f'{cs}4'].fill = f_card
+        ws_dash[f'{cs}4'].number_format = num_fmt
+        ws_dash[f'{cs}4'].alignment = Alignment(horizontal="center")
+        
+        ws_dash.merge_cells(f'{cs}5:{ce}5')
+        ws_dash[f'{cs}5'] = f'=IF(Calculations!I{idx+2}=0, "▶ Steady", IF(Calculations!I{idx+2}>0, "▲ +" & TEXT(Calculations!I{idx+2}, "0.0%") & " Mom", "▼ " & TEXT(Calculations!I{idx+2}, "0.0%") & " Drag"))'
+        ws_dash[f'{cs}5'].font = Font(size=7.5, bold=True, color="334155")
+        ws_dash[f'{cs}5'].fill = f_card
+        ws_dash[f'{cs}5'].alignment = Alignment(horizontal="center")
         if len(valid_dt) >= 2:
             unique_months = valid_dt['__dt'].dt.to_period('M').nunique()
             freq = 'M' if unique_months >= 3 else 'D'
