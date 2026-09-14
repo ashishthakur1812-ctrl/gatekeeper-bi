@@ -11,9 +11,12 @@ st.set_page_config(page_title="Gatekeeper BI | Enterprise Suite", page_icon="�
 st.title("🛡️ Gatekeeper BI: Executive Dashboard Engine")
 st.caption("Universal 2FA Autonomous Reporting Pipeline (v71.0 Enterprise Master)")
 
-uploaded_file = st.file_uploader("Upload raw business dataset (.csv or .xlsx)", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload raw business dataset (.csv or .xlsx)")
 
 if uploaded_file is not None:
+    if not (uploaded_file.name.lower().endswith('.csv') or uploaded_file.name.lower().endswith('.xlsx')):
+        st.error("⚠️ Invalid format! Please upload only .csv or .xlsx file.")
+        st.stop()
     st.write("---")
     try:
         if uploaded_file.name.endswith('.csv'):
