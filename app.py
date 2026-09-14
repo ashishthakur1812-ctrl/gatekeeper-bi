@@ -115,23 +115,76 @@ st.write("---")
 # --- COMPILATION & EXECUTION ENGINE ---
 if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
     with st.spinner("Executing Autonomous Pipeline (v71.0 Enterprise Master)..."):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            file_extension = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
-            temp_input_path = os.path.join(tmp_dir, f"input_dataset{file_extension}")
-            
-            uploaded_file.seek(0)
-            with open(temp_input_path, "wb") as f_out:
-                f_out.write(uploaded_file.read())
-            
-            # Subprocess execution
-            cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input_path]
-            process_res = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
-            
-            if process_res.returncode != 0 and not any(os.path.exists(f) for f in glob.glob("*.xlsx") + glob.glob(os.path.join(tmp_dir, "*.xlsx"))):
-                st.error("Compilation Pipeline Failed:")
-                st.code(process_res.stderr or process_res.stdout)
-                st.stop()
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                file_extension = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
+                temp_input_path = os.path.join(tmp_dir, f"input_dataset{file_extension}")
+                
+                # CRITICAL FIX: Reset pointer to beginning before reading
+                uploaded_file.seek(0)
+                with open(temp_input_path, "wb") as f_out:
+                    f_out.write(uploaded_file.read())
+                
+                # Copy pipeline script or ensure execution from current dir
+                current_dir = os.getcwd()
+                cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input_path]
+                
+                process_res = subprocess.run(
+                    cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    cwd=current_dir,
+                    timeout=60  # Prevent infinite hanging
+                )
+                
+                if process_res.returncode != 0:
+                    st.error("❌ Compilation Pipeline Failed:")
+                    st.code(process_res.stderr or process_res.stdout)
+                    st.stop()
 
+                # Search artifacts in both temp dir and current working dir
+                generated_excel = glob.glob(os.path.join(tmp_dir, "*Executive*.xlsx")) or glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
+                generated_csv = glob.glob(os.path.join(tmp_dir, "*Audit*.csv")) or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
+                generated_parquet = glob.glob(os.path.join(tmp_dir, "*.parquet")) or glob.glob("*.parquet")
+
+                if not generated_excel:
+                    st.error("⚠️ Pipeline executed but output artifacts were not found in working directory.")
+                    st.code(process_res.stdout)
+                    st.stop()
+
+                st.success("✅ Audit Suite compiled successfully!")
+
+                d_col1, d_col2, d_col3 = st.columns(3)
+
+                with open(generated_excel[0], "rb") as ef:
+                    d_col1.download_button(
+                        label="📥 Download Executive Suite (.xlsx)",
+                        data=ef.read(),
+                        file_name=os.path.basename(generated_excel[0]),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                if generated_csv:
+                    with open(generated_csv[0], "rb") as cf:
+                        d_col2.download_button(
+                            label="🛡️ Download Quarantine Audit (.csv)",
+                            data=cf.read(),
+                            file_name=os.path.basename(generated_csv[0]),
+                            mime="text/csv"
+                        )
+
+                if generated_parquet:
+                    with open(generated_parquet[0], "rb") as pf:
+                        d_col3.download_button(
+                            label="⚡ Download Parquet Mirror (.parquet)",
+                            data=pf.read(),
+                            file_name=os.path.basename(generated_parquet[0]),
+                            mime="application/octet-stream"
+                        )
+        except subprocess.TimeoutExpired:
+            st.error("⏱️ Pipeline execution timed out! Dataset size might be too large or script entered an infinite loop.")
+        except Exception as ex:
+            st.error(f"⚠️ Execution Error: {ex}")
             # Identify output artifacts
             generated_excel = glob.glob(os.path.join(tmp_dir, "*Executive*.xlsx")) or glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
             generated_csv = glob.glob(os.path.join(tmp_dir, "*Audit*.csv")) or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
