@@ -6,17 +6,31 @@ import glob
 import time
 import tempfile
 import io
-st.set_page_config(page_title="Gatekeeper BI | Enterprise Suite", page_icon="🛡️", layout="wide")
+import sys
+
+# --- PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Gatekeeper BI | Enterprise Suite",
+    page_icon="🛡️",
+    layout="wide"
+)
 
 st.title("🛡️ Gatekeeper BI: Executive Dashboard Engine")
 st.caption("Universal 2FA Autonomous Reporting Pipeline (v71.0 Enterprise Master)")
 
-# --- 3-WAY UNIVERSAL INPUT ENGINE ---
+# --- SESSION STATE INITIALIZATION ---
 if "uploaded_data" not in st.session_state:
     st.session_state["uploaded_data"] = None
 
+# --- 3-WAY UNIVERSAL INPUT ENGINE ---
 st.write("### 📂 Input Business Data")
-tab_upload, tab_paste, tab_demo = st.tabs(["📁 File Upload (Desktop/iOS)", "📋 Paste CSV (Mobile Safe)", "🧪 1-Click Demo Data"])
+tab_upload, tab_paste, tab_demo = st.tabs([
+    "📁 File Upload (Desktop/iOS)",
+    "📋 Paste CSV (Mobile Safe)",
+    "🧪 1-Click Demo Data"
+])
+
+up_file = None
 
 with tab_upload:
     up_file = st.file_uploader("Upload raw business dataset (.csv or .xlsx)", key="main_file_uploader")
@@ -27,7 +41,8 @@ with tab_upload:
             st.error("⚠️ Invalid format! Please upload only .csv or .xlsx")
 
 with tab_paste:
-    pasted_text = st.text_area("Paste CSV text directly here (Recommended for Android users)", height=150)
+    st.info("💡 Note: Direct pasting only supports plain text (.csv). For Excel (.xlsx), use the Upload tab.")
+    pasted_text = st.text_area("Paste raw CSV text directly here (Recommended for Android users)", height=150)
     if st.button("📥 Load Pasted Data"):
         if pasted_text.strip():
             f = io.BytesIO(pasted_text.encode('utf-8'))
@@ -35,7 +50,7 @@ with tab_paste:
             st.session_state["uploaded_data"] = f
             st.success("Data successfully loaded!")
         else:
-            st.warning("Please paste some CSV text first.")
+            st.warning("Please paste valid CSV data first.")
 
 with tab_demo:
     if st.button("🚀 Load Enterprise Sample (Instant Mobile Test)"):
@@ -52,126 +67,95 @@ with tab_demo:
         st.session_state["uploaded_data"] = f
         st.success("Enterprise demo data ready!")
 
-uploaded_file = st.session_state["uploaded_data"]
+# Resolve active file (Upload precedence over session)
+uploaded_file = up_file if up_file is not None else st.session_state.get("uploaded_data")
 
-if uploaded_file is not None:
-    uploaded_file.seek(0)
-    st.write("---")
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            df_preview = pd.read_csv(uploaded_file)
-        else:
-            xl = pd.ExcelFile(uploaded_file)
-            target_sheet = 'Cleaned_Data' if 'Cleaned_Data' in xl.sheet_names else xl.sheet_names[0]
-            df_preview = xl.parse(target_sheet)
-    except Exception as e:
-        st.error(f"File read error: {e}")
-        st.stop()
-else:
+# Stop execution if no data is provided
+if uploaded_file is None:
+    st.info("👆 Please upload a file, paste CSV data, or load demo data above to proceed.")
     st.stop()
-    # Guard: Detect pre-generated dashboards
-    sample_cols = [str(c).lower() for c in df_preview.columns]
-    if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.isnull().sum().sum() / (df_preview.size or 1)) > 0.8:
-        st.error("⚠️ Invalid Raw Data: Raw transactional dataset upload karein.")
-        st.stop()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Raw Ingested Records", f"{len(df_preview):,}")
-    c2.metric("Detected Columns", len(df_preview.columns))
-    c3.metric("Data Completeness", f"{(1 - df_preview.isnull().sum().sum() / (df_preview.size or 1)):.1%}")
+# --- PREVIEW & VALIDATION PIPELINE ---
+uploaded_file.seek(0)
+st.write("---")
 
-    with st.expander("🔍 Ingested Schema Preview", expanded=False):
-        st.dataframe(df_preview.head(10), use_container_width=True)
+try:
+    if uploaded_file.name.lower().endswith('.csv'):
+        df_preview = pd.read_csv(uploaded_file)
+    else:
+        xl = pd.ExcelFile(uploaded_file)
+        target_sheet = 'Cleaned_Data' if 'Cleaned_Data' in xl.sheet_names else xl.sheet_names[0]
+        df_preview = xl.parse(target_sheet)
+except Exception as e:
+    st.error(f"File read error: {e}")
+    st.stop()
 
-    if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
-        run_timestamp = time.time()
-        with st.spinner("Processing Data Sanitization, Dual-Slot Routing & Compiling Artifacts..."):
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                input_path = os.path.join(tmp_dir, uploaded_file.name)
-                with open(input_path, "wb") as f:
-                    uploaded_file.seek(0)
-                    f.write(uploaded_file.read())
+# Guard: Detect pre-generated dashboards
+sample_cols = [str(c).lower() for c in df_preview.columns]
+if any("filter" in c or "dashboard" in c for c in sample_cols) or (df_preview.isnull().sum().sum() / (df_preview.size or 1)) > 0.8:
+    st.error("⚠️ Invalid Raw Data: Raw transactional dataset upload karein.")
+    st.stop()
 
-                proc = subprocess.run(
-                    ["python", "pipeline_v71_DYNAMIC.py"],
-                    input=f"{input_path}\n",
-                    text=True,
-                    capture_output=True
-                )
+st.subheader("📊 Dataset Overview & Preview")
+col1, col2 = st.columns(2)
+col1.metric("Total Records", f"{len(df_preview):,}")
+col2.metric("Total Features / Columns", f"{len(df_preview.columns):,}")
+st.dataframe(df_preview.head(10), use_container_width=True)
 
-                if proc.returncode != 0:
-                    st.error("Pipeline crashed during processing. Terminal error:")
-                    st.code(proc.stderr or proc.stdout)
-                    st.stop()
+st.write("---")
 
-                # Locate Fresh Reports
-                fresh_excels = [f for f in glob.glob("reports/*.xlsx") if not os.path.basename(f).startswith("~$") and os.path.getmtime(f) >= run_timestamp - 2]
-                quarantine_files = [f for f in glob.glob("quarantine/*") if os.path.getmtime(f) >= run_timestamp - 2]
-                parquet_files = [f for f in glob.glob("reports/*.parquet") if os.path.getmtime(f) >= run_timestamp - 2]
+# --- COMPILATION & EXECUTION ENGINE ---
+if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
+    with st.spinner("Executing Autonomous Pipeline (v71.0 Enterprise Master)..."):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_extension = ".csv" if uploaded_file.name.lower().endswith(".csv") else ".xlsx"
+            temp_input_path = os.path.join(tmp_dir, f"input_dataset{file_extension}")
+            
+            uploaded_file.seek(0)
+            with open(temp_input_path, "wb") as f_out:
+                f_out.write(uploaded_file.read())
+            
+            # Subprocess execution
+            cmd = [sys.executable, "pipeline_v71_DYNAMIC.py", temp_input_path]
+            process_res = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+            
+            if process_res.returncode != 0 and not any(os.path.exists(f) for f in glob.glob("*.xlsx") + glob.glob(os.path.join(tmp_dir, "*.xlsx"))):
+                st.error("Compilation Pipeline Failed:")
+                st.code(process_res.stderr or process_res.stdout)
+                st.stop()
 
-                if not fresh_excels:
-                    st.error("Dashboard workbook generate nahi ho payi.")
-                    st.code(proc.stdout)
-                else:
-                    st.success("✅ Audit Suite compiled! All enterprise delivery artifacts are ready.")
-                    st.write("### 📦 Enterprise Delivery Artifacts")
-                    col_a, col_b, col_c = st.columns(3)
+            # Identify output artifacts
+            generated_excel = glob.glob(os.path.join(tmp_dir, "*Executive*.xlsx")) or glob.glob("*Executive*.xlsx") or glob.glob("*.xlsx")
+            generated_csv = glob.glob(os.path.join(tmp_dir, "*Audit*.csv")) or glob.glob("*Quarantine*.csv") or glob.glob("*.csv")
+            generated_parquet = glob.glob(os.path.join(tmp_dir, "*.parquet")) or glob.glob("*.parquet")
 
-                    # 1. Master Excel Dashboard
-                    latest_excel = max(fresh_excels, key=os.path.getmtime)
-                    with open(latest_excel, "rb") as f:
-                        excel_bytes = f.read()
-                    with col_a:
-                        st.download_button(
-                            label="📊 1. Executive Dashboard (.xlsx)",
-                            data=excel_bytes,
-                            file_name=os.path.basename(latest_excel),
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
+            st.success("✅ Audit Suite compiled successfully!")
 
-                    # 2. Quarantine Audit Log
-                    with col_b:
-                        if quarantine_files:
-                            latest_quar = max(quarantine_files, key=os.path.getmtime)
-                            with open(latest_quar, "rb") as f:
-                                quar_bytes = f.read()
-                            st.download_button(
-                                label="🛡️ 2. Quarantine Audit Log (.csv)",
-                                data=quar_bytes,
-                                file_name=os.path.basename(latest_quar),
-                                mime="text/csv",
-                                use_container_width=True
-                            )
-                        else:
-                            st.info("🛡️ Quarantine: 0 dirty rows dropped (100% clean data).")
+            d_col1, d_col2, d_col3 = st.columns(3)
 
-                    # 3. Optimized Parquet File
-                    with col_c:
-                        stem_name = os.path.splitext(uploaded_file.name)[0]
-                        if parquet_files:
-                            latest_parquet = max(parquet_files, key=os.path.getmtime)
-                            with open(latest_parquet, "rb") as f:
-                                parq_bytes = f.read()
-                            st.download_button(
-                                label="⚡ 3. Analytical Parquet (.parquet)",
-                                data=parq_bytes,
-                                file_name=os.path.basename(latest_parquet),
-                                mime="application/octet-stream",
-                                use_container_width=True
-                            )
-                        else:
-                            xl = pd.ExcelFile(latest_excel)
-                            sheet_to_use = 'Cleaned_Data' if 'Cleaned_Data' in xl.sheet_names else xl.sheet_names[0]
-                            df_clean = xl.parse(sheet_to_use)
-                            parq_path = os.path.join(tmp_dir, "cleaned_dataset.parquet")
-                            df_clean.to_parquet(parq_path, index=False)
-                            with open(parq_path, "rb") as f:
-                                parq_bytes = f.read()
-                            st.download_button(
-                                label="⚡ 3. Analytical Parquet (.parquet)",
-                                data=parq_bytes,
-                                file_name=f"{stem_name}_Cleaned.parquet",
-                                mime="application/octet-stream",
-                                use_container_width=True
-                            )
+            if generated_excel:
+                with open(generated_excel[0], "rb") as ef:
+                    d_col1.download_button(
+                        label="📥 Download Executive Suite (.xlsx)",
+                        data=ef.read(),
+                        file_name=os.path.basename(generated_excel[0]),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+            if generated_csv:
+                with open(generated_csv[0], "rb") as cf:
+                    d_col2.download_button(
+                        label="🛡️ Download Quarantine Audit (.csv)",
+                        data=cf.read(),
+                        file_name=os.path.basename(generated_csv[0]),
+                        mime="text/csv"
+                    )
+
+            if generated_parquet:
+                with open(generated_parquet[0], "rb") as pf:
+                    d_col3.download_button(
+                        label="⚡ Download Parquet Mirror (.parquet)",
+                        data=pf.read(),
+                        file_name=os.path.basename(generated_parquet[0]),
+                        mime="application/octet-stream"
+                    )
