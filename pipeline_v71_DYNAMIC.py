@@ -200,6 +200,7 @@ def clean_dataframe(df):
     cleaned.columns = [str(c).strip().replace('\n', ' ') for c in cleaned.columns]
     initial_count = len(cleaned)
 
+    # Fast vectorized cleaning (No slow loops)
     for col in cleaned.columns:
         col_low = str(col).lower()
         is_code = any(k in col_low for k in ['id', 'code', 'pin', 'zip', 'key', 'sku', 'inv', 'sl_no', 'account', 'no.'])
@@ -308,9 +309,7 @@ def build_mathematical_profile(df):
     primary_measure = filtered_monetary[0] if filtered_monetary else (intensive_cands[0] if intensive_cands else df.columns[0])
     primary_agg = 'AVG' if primary_measure in intensive_cands else 'SUM'
 
-    s2_unq = df[sec_dim].nunique() if sec_dim in df.columns else 0
-    chart2_mode = 'STATUS_DOUGHNUT' if (2 <= s2_unq <= 6) else 'HORIZONTAL_BAR'
-    chart2_config = {'mode': chart2_mode, 'dim': sec_dim, 'title': f'Distribution Segment by {sec_dim}'}
+    chart2_config = {'mode': 'STATUS_DOUGHNUT', 'dim': sec_dim, 'title': f'Distribution by {sec_dim}'}
 
     kpi_measures = []
     for m in filtered_monetary:
@@ -447,7 +446,6 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     for row in df.itertuples(index=False, name=None): ws_data.append(list(row))
     num_rows = len(df) + 1
 
-    # Auto-adjust column widths cleanly
     for i, col in enumerate(headers):
         col_letter = get_column_letter(i+1)
         max_len = max(len(str(col)), 14)
@@ -472,9 +470,9 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             ws_calc[f'A{i}'] = str(val)
             ws_calc[f'B{i}'] = f'=IFERROR(IF(Executive_Dashboard!$M$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1)), 0)'
             
-    # Chart 2: Top 8 to prevent overlap
+    # Chart 2: Limit to top 6 categories for a completely clean Doughnut
     sec_counts = df[dim2_col].value_counts()
-    unique_dim2 = [str(x) for x in sec_counts.index[:8]]
+    unique_dim2 = [str(x) for x in sec_counts.index[:6]]
     if unique_dim2:
         ws_calc['D1'], ws_calc['E1'] = str(dim2_col), "Volume"
         for i, val in enumerate(unique_dim2, start=2):
@@ -549,27 +547,50 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         ws_dash[f'{cs}5'].fill = f_card
         ws_dash[f'{cs}5'].alignment = Alignment(horizontal="center")
 
-    # Chart 1: Macro Dimension Distribution
+    # Chart 1: Professional Vertical Columns with Value Labels & Visible Y-Axis
     if unique_dim1:
         c1 = BarChart()
-        c1.style, c1.height, c1.width = 10, 6.8, 14.0
-        c1.legend = None
-        c1.title = f"Distribution: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
         c1.type = 'col'
-        c1.y_axis.number_format = '#,##0'  # Clean format without hardcoded dollar
+        c1.style = 10
+        c1.height = 6.8
+        c1.width = 13.8
+        c1.legend = None
+        c1.title = f"Performance Ranking: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
+        
+        # Clean axes without background gridlines
+        c1.y_axis.delete = False
+        c1.x_axis.delete = False
+        c1.y_axis.majorGridlines = None
+        c1.x_axis.majorGridlines = None
+        c1.y_axis.number_format = '#,##0'
+
+        c1.dataLabels = DataLabelList()
+        c1.dataLabels.showVal = True
+        c1.dataLabels.showCatName = False
+        c1.dataLabels.showSerName = False
+
         c1.add_data(Reference(ws_calc, min_col=2, min_row=1, max_row=len(unique_dim1)+1), titles_from_data=True)
         c1.set_categories(Reference(ws_calc, min_col=1, min_row=2, max_row=len(unique_dim1)+1))
         ws_dash.add_chart(c1, 'A6')
 
-    # Chart 2: Clean Horizontal Bar (Zero Overlap Guaranteed)
+    # Chart 2: Beautiful Clean Doughnut (Zero Label Overlap Guaranteed)
     if unique_dim2:
-        c2 = BarChart()
-        c2.type = "bar"  # Horizontal avoids vertical squashing
-        c2.title = f"Volume Breakdown by {dim2_col}"
-        c2.style, c2.height, c2.width = 10, 6.8, 14.0
-        c2.legend = None  # COMPLETELY REMOVED CLUTTERED BOTTOM LEGEND BOX
+        c2 = DoughnutChart()
+        c2.title = f"Distribution: {dim2_col}"
+        c2.style = 10
+        c2.height = 6.8
+        c2.width = 13.2
+        c2.holeSize = 62
+        
+        c2.legend = Legend()
+        c2.legend.legendPos = "r"
+        
         c2.dataLabels = DataLabelList()
-        c2.dataLabels.showVal = True  # Show count cleanly next to bar
+        c2.dataLabels.showPercent = True
+        c2.dataLabels.showVal = False
+        c2.dataLabels.showCatName = False
+        c2.dataLabels.showSerName = False
+
         c2.add_data(Reference(ws_calc, min_col=5, min_row=1, max_row=len(unique_dim2)+1), titles_from_data=True)
         c2.set_categories(Reference(ws_calc, min_col=4, min_row=2, max_row=len(unique_dim2)+1))
         ws_dash.add_chart(c2, "H6")
