@@ -721,6 +721,17 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
                 return json.load(f)
         except Exception:
             pass
+
+    # --- FULL AUTONOMOUS ZERO-TOUCH GEMINI AI TRIGGER ---
+    try:
+        import ai_semantic_agent
+        print(f"[AI AGENT] Auto-generating semantic contract via Gemini for: {file_path}")
+        ai_semantic_agent.run_agent(file_path)
+        if contract_path.exists():
+            with open(contract_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as ai_err:
+        print(f"[AI FALLBACK] Proceeding with heuristic contract. Reason: {ai_err}")
             
     # Heuristic determination of currency & polarity
     p_meas = math_profile.get('primary_measure', '')
@@ -909,11 +920,11 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         agg_raw = execute_math_agg(df, dim1_col, m1_col, m1_agg)
         agg_preview = agg_raw[0] if isinstance(agg_raw, tuple) else agg_raw
         try:
-            has_c1_neg = bool((agg_preview < 0).any())
+            has_c1_neg = bool((agg_preview.select_dtypes(include=['number']) < 0).any().any()) if isinstance(agg_preview, pd.DataFrame) else False
             agg_max = float(agg_preview.max())
             agg_min = float(agg_preview.min())
         except Exception:
-            has_c1_neg = bool((df[m1_col] < 0).any()) if m1_col in df.columns else False
+            has_c1_neg = bool((pd.to_numeric(df[m1_col], errors='coerce') < 0).any()) if m1_col in df.columns else False
             agg_max = float(df[m1_col].max()) if m1_col in df.columns else 0.0
             agg_min = float(df[m1_col].min()) if m1_col in df.columns else 0.0
 
