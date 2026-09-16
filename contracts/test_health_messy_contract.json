@@ -1,0 +1,18 @@
+{
+  "dataset_signature": "test_health_messy",
+  "theme_palette": "HEALTHCARE_CLINICAL",
+  "currency_symbol": "$",
+  "primary_measure": {
+    "column": "Bill_USD",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Dept",
+    "secondary_dimension": "Dept"
+  },
+  "kpi_measures": [
+    "Bill_USD",
+    "Stay_Days"
+  ]
+}

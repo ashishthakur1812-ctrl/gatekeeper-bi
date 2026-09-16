@@ -1,0 +1,19 @@
+{
+  "dataset_signature": "Messy_Healthcare_Hospital_Analytics",
+  "theme_palette": "HEALTHCARE_CLINICAL",
+  "currency_symbol": "",
+  "primary_measure": {
+    "column": "Total_Bill_Amount",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Department",
+    "secondary_dimension": "Doctor_Name"
+  },
+  "kpi_measures": [
+    "Total_Bill_Amount",
+    "Treatment_Cost",
+    "Consultation_Fee"
+  ]
+}

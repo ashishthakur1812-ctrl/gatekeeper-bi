@@ -1,0 +1,18 @@
+{
+  "dataset_signature": "retail_dirty",
+  "theme_palette": "ECOMMERCE_RETAIL",
+  "currency_symbol": "",
+  "primary_measure": {
+    "column": "Net_Sales",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Order_Status",
+    "secondary_dimension": "Order_Status"
+  },
+  "kpi_measures": [
+    "Net_Sales",
+    "Discount_Pct"
+  ]
+}

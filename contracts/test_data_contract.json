@@ -1,0 +1,24 @@
+{
+  "dataset_signature": "healthcare_billing",
+  "theme_palette": "HEALTHCARE_EMERALD",
+  "currency_symbol": "$",
+  "primary_measure": {
+    "column": "Total_Bill_Amount",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Department",
+    "secondary_dimension": "Hospital_Zip_Code"
+  },
+  "kpi_measures": [
+    [
+      "Total_Bill_Amount",
+      "SUM"
+    ],
+    [
+      "Patient_Age",
+      "AVG"
+    ]
+  ]
+}

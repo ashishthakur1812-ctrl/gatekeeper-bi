@@ -1,0 +1,18 @@
+{
+  "dataset_signature": "test_retail_messy",
+  "theme_palette": "ECOMMERCE_RETAIL",
+  "currency_symbol": "",
+  "primary_measure": {
+    "column": "Gross_Sales",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Category",
+    "secondary_dimension": "Category"
+  },
+  "kpi_measures": [
+    "Gross_Sales",
+    "Discount"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "dataset_signature": "Messy_Fleet_Energy_Telematics",
+  "theme_palette": "AUTOMOTIVE_EV",
+  "currency_symbol": "",
+  "primary_measure": {
+    "column": "Billing_Amt_INR",
+    "aggregation": "SUM",
+    "optimization_goal": "MAX"
+  },
+  "dimensions": {
+    "macro_dimension": "Depot_Hub",
+    "secondary_dimension": "Asset_Model_Class"
+  },
+  "kpi_measures": [
+    "Billing_Amt_INR",
+    "Gross_Energy_kWh",
+    "Efficiency_Score"
+  ]
+}

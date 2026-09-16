@@ -1,0 +1,28 @@
+{
+  "dataset_signature": "test_sample_1k",
+  "theme_palette": "HEALTHCARE_EMERALD",
+  "currency_symbol": "$",
+  "primary_measure": {
+    "column": "insurance_cost_usd",
+    "aggregation": "SUM",
+    "optimization_goal": "MIN"
+  },
+  "dimensions": {
+    "macro_dimension": "make",
+    "secondary_dimension": "region"
+  },
+  "kpi_measures": [
+    [
+      "insurance_cost_usd",
+      "SUM"
+    ],
+    [
+      "maintenance_cost_usd",
+      "SUM"
+    ],
+    [
+      "electricity_cost_per_kwh",
+      "AVG"
+    ]
+  ]
+}
