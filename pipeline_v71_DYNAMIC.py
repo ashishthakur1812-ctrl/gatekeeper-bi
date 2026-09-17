@@ -993,8 +993,9 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             c2.x_axis.majorGridlines = None
             c2.legend = Legend()
             c2.legend.legendPos = "r"
+            c2.legend.overlay = False
             c2.dataLabels = None
-            c2.y_axis.title = f"{m_meas} ({curr_sym})" if curr_sym else f"{m_meas}"
+            c2.y_axis.title = None
             
         c2.add_data(Reference(ws_calc, min_col=5, min_row=1, max_row=len(unique_dim2)+1), titles_from_data=True)
         c2.series[0].cat = AxDataSource(strRef=StrRef(f"'Calculations'!$D$2:$D{len(unique_dim2)+1}", strCache=StrData(pt=[StrVal(idx=i, v=str(x)) for i, x in enumerate(unique_dim2)])))
