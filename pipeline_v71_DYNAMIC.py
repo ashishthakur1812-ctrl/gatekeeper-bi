@@ -812,8 +812,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         agg_str = 'AVERAGE' if m1_agg == 'AVG' else 'SUM'
         for i, val in enumerate(unique_dim1, start=2):
             ws_calc[f'A{i}'] = str(val)
-            ws_calc[f'B{i}'] = f'=IFERROR(IF(Executive_Dashboard!$M$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1)), 0)'
-            
+            ws_calc[f'B{i}'] = f'=IF(AND(Executive_Dashboard!$J$1<>"All", Executive_Dashboard!$J$1<>Calculations!A{i}), 0, IFERROR(IF(Executive_Dashboard!$M$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1)), 0))'
     unique_dim2 = [str(x) for x in df[profile['chart2_config'].get('dim', dim2_col)].dropna().unique()][:15]
     if unique_dim2:
         ws_calc['D1'], ws_calc['E1'] = str(profile['chart2_config'].get('dim')), "Volume"
