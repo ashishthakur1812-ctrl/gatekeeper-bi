@@ -803,28 +803,45 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     ws_data.freeze_panes = "A2"
 
     ws_calc = wb.create_sheet(title="Calculations")
-    dim1_col, dim2_col, m1_col, m1_agg = profile['macro_dim'], profile['sec_dim'], profile['primary_measure'], profile['primary_agg']
-    d1_let, d2_let, m1_let = get_column_letter(headers.index(dim1_col)+1), get_column_letter(headers.index(dim2_col)+1), get_column_letter(headers.index(m1_col)+1)
-    
+    raw_d1, raw_d2 = profile['macro_dim'], profile['sec_dim']
+    m1_col, m1_agg = profile['primary_measure'], profile['primary_agg']
+
+    # Auto-balance cardinality: Parent (Zone, 2-6 unique) vs Child (Branch/Entity, 6-15 unique)
+    u1_cnt = df[raw_d1].dropna().nunique() if raw_d1 in df.columns else 0
+    u2_cnt = df[raw_d2].dropna().nunique() if raw_d2 in df.columns else 0
+
+    if u1_cnt < u2_cnt:
+        parent_dim, child_dim = raw_d1, raw_d2
+    else:
+        parent_dim, child_dim = raw_d2, raw_d1
+
+    dim1_col, dim2_col = child_dim, parent_dim
+    d1_let = get_column_letter(headers.index(dim1_col) + 1)  # Child (Branch / Entity)
+    d2_let = get_column_letter(headers.index(dim2_col) + 1)  # Parent (Zone / Category)
+    m1_let = get_column_letter(headers.index(m1_col) + 1)    # Primary Measure Metric
+
     unique_dim1 = [str(x) for x in df[dim1_col].dropna().unique()][:12]
     if dim1_col:
         ws_calc['A1'], ws_calc['B1'] = str(dim1_col), str(m1_col)
         agg_str = 'AVERAGE' if m1_agg == 'AVG' else 'SUM'
         for i, val in enumerate(unique_dim1, start=2):
             ws_calc[f'A{i}'] = str(val)
-            ws_calc[f'B{i}'] = f'=IF(AND(Executive_Dashboard!$J$1<>"All", Executive_Dashboard!$J$1<>Calculations!A{i}), 0, IFERROR(IF(Executive_Dashboard!$M$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$M$1)), 0))'
-    unique_dim2 = [str(x) for x in df[profile['chart2_config'].get('dim', dim2_col)].dropna().unique()][:15]
+            ws_calc[f'B{i}'] = f'=IFERROR(IF(Executive_Dashboard!$J$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$J$1)), 0)'
+
+    unique_dim2 = [str(x) for x in df[dim2_col].dropna().unique()][:15]
     if unique_dim2:
-        ws_calc['D1'], ws_calc['E1'] = str(profile['chart2_config'].get('dim')), "Volume"
+        ws_calc['D1'], ws_calc['E1'] = str(dim2_col), "Volume"
         for i, val in enumerate(unique_dim2, start=2):
             ws_calc[f'D{i}'] = str(val)
-            ws_calc[f'E{i}'] = f'=IFERROR(IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Executive_Dashboard!$J$1)), 0)'
+            ws_calc[f'E{i}'] = f'=IFERROR(IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Executive_Dashboard!$M$1)), 0)'
 
     ws_dash = wb.create_sheet(title="Executive_Dashboard", index=0)
     ws_dash.sheet_view.showGridLines = False
-    for c_letter in ['A','B','C','D','E','F','G','H','I','J','K','L','M','N']: ws_dash.column_dimensions[c_letter].width = 12.5
+    for c_letter in ['A','B','C','D','E','F','G','H','I','J','K','L','M','N']:
+        ws_dash.column_dimensions[c_letter].width = 12.5
     for r in range(1, 45):
-        for c in range(1, 16): ws_dash.cell(row=r, column=c).fill = PatternFill(start_color="FFFFFF", fill_type="solid")
+        for c in range(1, 16):
+            ws_dash.cell(row=r, column=c).fill = PatternFill(start_color="FFFFFF", fill_type="solid")
     ws_calc.sheet_state = 'hidden'
 
     f_head = PatternFill(start_color=pal['header_fill'], fill_type="solid")
@@ -837,8 +854,9 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     ws_dash['A1'].font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     ws_dash['A1'].fill = f_head
     ws_dash['A1'].alignment = Alignment(vertical="center")
-    
-    for sc_start, sc_end, s_name, s_col, dv_list in [('H', 'I', dim1_col, 'J', unique_dim1), ('K', 'L', dim2_col, 'M', unique_dim2)]:
+
+    # Dropdown 1 ($J$1) = Parent (Zone), Dropdown 2 ($M$1) = Child (Branch)
+    for sc_start, sc_end, s_name, s_col, dv_list in [('H', 'I', dim2_col, 'J', unique_dim2), ('K', 'L', dim1_col, 'M', unique_dim1)]:
         ws_dash.merge_cells(f'{sc_start}1:{sc_end}1')
         ws_dash[f'{sc_start}1'] = f"Filter {s_name}:"
         ws_dash[f'{sc_start}1'].font = Font(name="Calibri", size=8.5, bold=True, color=pal['title_color'])
@@ -850,33 +868,33 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             dv = DataValidation(type="list", formula1=f'"{",".join(["All"] + dv_list[:15])}"', allow_blank=True)
             ws_dash.add_data_validation(dv)
             dv.add(f'{s_col}1')
-            
+
     ws_dash.merge_cells('A2:F2')
     ws_dash['A2'] = f"  DATA GOVERNANCE: v71.0 Final Enterprise Master | Stamp: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     ws_dash['A2'].font = Font(size=7.5, bold=True, color="475569")
     ws_dash['A2'].fill = PatternFill(start_color="F1F5F9", fill_type="solid")
 
-    cards_data = [(profile['vol_label'], f'=IFERROR(IF(AND($J$1="All", $M$1="All"), COUNTA(Cleaned_Data!A2:A{num_rows}), IF($J$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $M$1), IF($M$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $J$1), COUNTIFS(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $J$1, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $M$1)))), 0)', '#,##0')]
+    cards_data = [(profile['vol_label'], f'=IFERROR(IF(AND($J$1="All", $M$1="All"), COUNTA(Cleaned_Data!A2:A{num_rows}), IF($J$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1), IF($M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1)))), 0)', '#,##0')]
     for metric, agg_type in profile['kpi_measures']:
         c_let = get_column_letter(headers.index(metric) + 1)
         lbl = f"{agg_type} {str(metric).upper().replace('_', ' ')}"
         func = 'AVERAGE' if agg_type in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
         fmt = get_math_format(df, metric, agg_type)
-        form = get_agg_form(func, c_let, d1_let, d2_let, 2, num_rows)
+        form = get_agg_form(func, c_let, d2_let, d1_let, 2, num_rows)
         cards_data.append((lbl, form, fmt))
 
     mid_r = max(2, (num_rows - 2) // 2 + 2)
-    v_f1 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A2:A{mid_r-1}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$M$1))))'
-    v_f2 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A{mid_r}:A{num_rows}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$M$1))))'
+    v_f1 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A2:A{mid_r-1}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{mid_r-1}, Executive_Dashboard!$J$1, Cleaned_Data!{d1_let}2:{d1_let}{mid_r-1}, Executive_Dashboard!$M$1))))'
+    v_f2 = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A{mid_r}:A{num_rows}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$J$1), COUNTIFS(Cleaned_Data!{d2_let}{mid_r}:{d2_let}{num_rows}, Executive_Dashboard!$J$1, Cleaned_Data!{d1_let}{mid_r}:{d1_let}{num_rows}, Executive_Dashboard!$M$1))))'
     ws_calc['G2'] = f'=IFERROR({v_f1}, 0)'
     ws_calc['H2'] = f'=IFERROR({v_f2}, 0)'
     ws_calc['I2'] = '=IFERROR((H2 - G2) / ABS(G2), 0)'
-    
+
     for m_idx, (m_col_k, m_agg_k) in enumerate(profile['kpi_measures'][:3], start=3):
         cl = get_column_letter(headers.index(m_col_k) + 1)
         func = 'AVERAGE' if m_agg_k in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
-        ws_calc[f'G{m_idx}'] = get_agg_form(func, cl, d1_let, d2_let, 2, mid_r-1)
-        ws_calc[f'H{m_idx}'] = get_agg_form(func, cl, d1_let, d2_let, mid_r, num_rows)
+        ws_calc[f'G{m_idx}'] = get_agg_form(func, cl, d2_let, d1_let, 2, mid_r-1)
+        ws_calc[f'H{m_idx}'] = get_agg_form(func, cl, d2_let, d1_let, mid_r, num_rows)
         ws_calc[f'I{m_idx}'] = f'=IFERROR((H{m_idx} - G{m_idx}) / ABS(G{m_idx}), 0)'
 
     ws_calc['I6'] = '=IFERROR(AVERAGE(I2:I5), 0)'
