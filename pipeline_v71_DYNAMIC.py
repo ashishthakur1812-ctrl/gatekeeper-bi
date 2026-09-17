@@ -932,7 +932,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c1.dataLabels = None
         c1.y_axis.delete = False
         c1.x_axis.delete = False
-        
+        c1.y_axis.majorGridlines = None
+        c1.x_axis.majorGridlines = None
         # Safe Signal Unpacking
         agg_raw = execute_math_agg(df, dim1_col, m1_col, m1_agg)
         agg_preview = agg_raw[0] if isinstance(agg_raw, tuple) else agg_raw
@@ -988,6 +989,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             else:
                 c2.type = "col"
             c2.y_axis.delete = False
+            c2.y_axis.majorGridlines = None
+            c2.x_axis.majorGridlines = None
             c2.y_axis.title = f"{m_meas} ({curr_sym})" if curr_sym else f"{m_meas}"
             c2.dataLabels.showVal = True
             c2.dataLabels.showVal = False
