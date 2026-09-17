@@ -993,6 +993,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             c2.x_axis.majorGridlines = None
             c2.legend = Legend()
             c2.legend.legendPos = "r"
+            c2.dataLabels = None
             c2.y_axis.title = f"{m_meas} ({curr_sym})" if curr_sym else f"{m_meas}"
             
         c2.add_data(Reference(ws_calc, min_col=5, min_row=1, max_row=len(unique_dim2)+1), titles_from_data=True)
