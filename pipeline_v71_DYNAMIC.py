@@ -994,14 +994,6 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             c2.legend = Legend()
             c2.legend.legendPos = "r"
             c2.y_axis.title = f"{m_meas} ({curr_sym})" if curr_sym else f"{m_meas}"
-            c2.dataLabels.showVal = True
-            c2.dataLabels.showVal = False
-            c2.dataLabels.showPercent = False
-            c2.legend = Legend()
-            c2.legend.legendPos = "b"
-        c2.dataLabels.showCatName = False
-        c2.dataLabels.showSerName = False
-        c2.dataLabels.showLegendKey = False
             
         c2.add_data(Reference(ws_calc, min_col=5, min_row=1, max_row=len(unique_dim2)+1), titles_from_data=True)
         c2.series[0].cat = AxDataSource(strRef=StrRef(f"'Calculations'!$D$2:$D{len(unique_dim2)+1}", strCache=StrData(pt=[StrVal(idx=i, v=str(x)) for i, x in enumerate(unique_dim2)])))
