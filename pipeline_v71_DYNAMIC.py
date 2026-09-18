@@ -1103,12 +1103,12 @@ if __name__ == "__main__":
     try:
         file_input = sys.argv[1] if len(sys.argv) > 1 else input("Enter CSV/Excel file path: ")
         process_pipeline(file_input)
-    except Exception as e:
+    except BaseException as e:
         import traceback
         print("\n" + "!"*60)
-        print("   SYSTEM CRASH DETECTED (MATHEMATICAL ENGINE HALTED)   ")
+        print(f" SYSTEM HALTED: {type(e).__name__} -> {e}")
         print("!"*60)
         traceback.print_exc()
-        print("!"*60)
+        sys.exit(1)
         
   
