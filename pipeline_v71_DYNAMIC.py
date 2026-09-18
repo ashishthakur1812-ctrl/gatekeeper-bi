@@ -119,6 +119,8 @@ def validate_with_circuit_breaker(
         validation_df = validation_df.fillna(defaults_to_apply)
 
     resolved_key = _resolve_primary_key(validation_df, primary_key)
+    if resolved_key and len(validation_df) > 0 and (validation_df[resolved_key].nunique() / len(validation_df)) < 0.90:
+        resolved_key = None
     inferred_critical = [c for c in _resolve_non_negative_metrics(validation_df, resolved_key) if 'score' not in str(c).lower() and 'satisfaction' not in str(c).lower()]
     configured_critical = _matching_columns(
         validation_df.columns,
