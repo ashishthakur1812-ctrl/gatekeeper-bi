@@ -955,17 +955,17 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             c1.type = 'col'
             c1.title = f"Net Variance: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
             c1.y_axis.scaling.min = agg_min * 1.2
-            c1.y_axis.scaling.max = agg_max * 1.2 if agg_max > 0 else 0
+            #c1.y_axis.scaling.max = agg_max * 1.2 if agg_max > 0 else 0
         elif cardinality_c1 > 6 or sec_type in ['ECOMMERCE_RETAIL', 'LOGISTICS_SUPPLY']:
             c1.type = 'bar'  # Horizontal prevents label overlap
             c1.title = f"Performance Ranking: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
             c1.y_axis.scaling.min = 0
-            if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
+             #if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
         else:
             c1.type = 'col'
             c1.title = f"Global Baseline: {m1_col.replace('_', ' ')} by {dim1_col.replace('_', ' ')}"
             c1.y_axis.scaling.min = 0
-            if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
+            #if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
 
         if agg_max >= 1_000_000:
             c1.y_axis.number_format = '$#,##0,, "M"'
