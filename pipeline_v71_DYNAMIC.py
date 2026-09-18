@@ -169,6 +169,25 @@ def validate_with_circuit_breaker(
     clean_df = validation_df.loc[~fatal_mask].copy()
     status = 'SUCCESS'
     if fatal_corrupt_rows:
+        q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
+        with pd.ExcelWriter(q_xlsx_path, engine='openpyxl') as writer:
+            quarantine_export_df.to_excel(writer, sheet_name="Quarantine_Triage", index=False)
+            ws = writer.sheets["Quarantine_Triage"]
+            
+            max_row = len(quarantine_export_df) + 1
+            max_col_letter = get_column_letter(quarantine_export_df.shape[1])
+            tab_range = f"A1:{max_col_letter}{max_row}"
+            
+            q_table = Table(displayName="QuarantineTriageTable", ref=tab_range)
+            q_table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleLight1",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False
+            )
+            ws.add_table(q_table)
+            
         quarantine_export_df.to_csv(quarantine_path, index=False)
         status = 'PARTIAL SUCCESS (QUARANTINED)'
     _write_validation_log(output_dir, ingested_rows, len(clean_df), soft_imputations, fatal_corrupt_rows, elapsed_seconds, status)
