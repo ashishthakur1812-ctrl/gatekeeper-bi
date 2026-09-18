@@ -121,6 +121,9 @@ def validate_with_circuit_breaker(
     resolved_key = _resolve_primary_key(validation_df, primary_key)
     if resolved_key and len(validation_df) > 0 and (validation_df[resolved_key].nunique() / len(validation_df)) < 0.90:
         resolved_key = None
+    if resolved_key is None and len(validation_df) > 0:
+        validation_df['_auto_row_id'] = [f"ROW_{i+1:06d}" for i in range(len(validation_df))]
+        resolved_key = '_auto_row_id'
     inferred_critical = [c for c in _resolve_non_negative_metrics(validation_df, resolved_key) if 'score' not in str(c).lower() and 'satisfaction' not in str(c).lower()]
     configured_critical = _matching_columns(
         validation_df.columns,
@@ -164,10 +167,28 @@ def validate_with_circuit_breaker(
     is_breached = (clean_rows_count < 2) or (fatal_percentage >= 95.0)
 
     if is_breached:
+    # 1. Breached file ke liye bhi full formatted Excel table render karo
+        q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
+        try:
+            with pd.ExcelWriter(q_xlsx_path, engine='openpyxl') as writer:
+                quarantine_export_df.to_excel(writer, sheet_name='Quarantine_Triage', index=False)
+                ws = writer.sheets['Quarantine_Triage']
+                max_row = len(quarantine_export_df) + 1
+                max_col_letter = get_column_letter(quarantine_export_df.shape[1])
+                tab_range = f"A1:{max_col_letter}{max_row}"
+                q_table = Table(displayName="QuarantineTriageTable", ref=tab_range)
+                q_table.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
+                ws.add_table(q_table)
+        except Exception:
+            pass
+
         quarantine_export_df.to_csv(quarantine_path, index=False)
         _write_validation_log(output_dir, ingested_rows, 0, soft_imputations, fatal_corrupt_rows, elapsed_seconds, "CRITICAL_BREACH")
-        print(f"[CIRCUIT BREAKER] Fatal breach: {fatal_percentage:.1f}% corrupted. Aborting.")
-        raise SystemExit(1)
+        print(f"[CIRCUIT BREAKER ACTIVATED] {fatal_percentage:.1f}% corrupted. Quarantine triage suite generated.")
+        
+        # 2. Terminal crash rokne ke liye safely empty dataframe aur status return karo
+        clean_df = validation_df.iloc[0:0].copy()
+        return ValidationResult(clean_df, soft_imputations, fatal_corrupt_rows, 'CRITICAL_BREACH')    
     clean_df = validation_df.loc[~fatal_mask].copy()
     status = 'SUCCESS'
     if fatal_corrupt_rows:
@@ -1090,7 +1111,9 @@ def process_pipeline(raw_input_path):
         started_at=started_at,
     )
     clean_df = validation.dataframe
-    
+    if validation.status == 'CRITICAL_BREACH' or len(clean_df) == 0:
+        print("[PIPELINE SAFELY HALTED] Critical breach: No clean records available for dashboard. Quarantine Triage generated.")
+        return
     schema = profile_algebraic_types(clean_df)
     print("\n--- ZERO-GUESSWORK SCHEMA AUDIT ---")
     print(f" -> Additive Measures (SUM) : {schema['Additive_Measures']}")
