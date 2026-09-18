@@ -124,7 +124,7 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
 
             if process_res.returncode != 0:
                 st.error("❌ Compilation Pipeline Failed:")
-                st.code(process_res.stderr or process_res.stdout)
+                st.code(f"--- STDOUT ---\n{process_res.stdout}\n\n--- STDERR ---\n{process_res.stderr}")
                 st.stop()
 
             # Retrieve rich dashboard from reports/ directory
