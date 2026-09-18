@@ -157,14 +157,15 @@ def validate_with_circuit_breaker(
     elapsed_seconds = max(0.0, time.perf_counter() - started)
 
     # Production-Grade Adaptive Circuit Breaker
-    is_small_batch = total_rows <= 50
-    is_breached = (fatal_percentage > 50.0 or (total_rows - fatal_corrupt_rows) < 2) if is_small_batch else (fatal_percentage > FATAL_CORRUPTION_THRESHOLD_PERCENT)
+    # Circuit Breaker: Sirf tab roko jab usable data 2 rows se kam bache
+    clean_rows_count = total_rows - fatal_corrupt_rows
+    is_breached = (clean_rows_count < 2) or (fatal_percentage >= 95.0)
 
     if is_breached:
         quarantine_export_df.to_csv(quarantine_path, index=False)
-        _write_validation_log(output_dir, ingested_rows, 0, soft_imputations, fatal_corrupt_rows, elapsed_seconds, 'CRITICAL HALT')
+        _write_validation_log(output_dir, ingested_rows, 0, soft_imputations, fatal_corrupt_rows, elapsed_seconds, "CRITICAL_BREACH")
+        print(f"[CIRCUIT BREAKER] Fatal breach: {fatal_percentage:.1f}% corrupted. Aborting.")
         raise SystemExit(1)
-
     clean_df = validation_df.loc[~fatal_mask].copy()
     status = 'SUCCESS'
     if fatal_corrupt_rows:
