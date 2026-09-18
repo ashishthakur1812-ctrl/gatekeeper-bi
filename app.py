@@ -150,17 +150,17 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                 )
 
             if generated_csv:
-        q_xlsx_file = generated_csv[0].replace('.csv', '.xlsx')
-        target_file = q_xlsx_file if os.path.exists(q_xlsx_file) else generated_csv[0]
-        is_excel = target_file.endswith('.xlsx')
+                q_xlsx_file = generated_csv[0].replace('.csv', '.xlsx')
+                target_file = q_xlsx_file if os.path.exists(q_xlsx_file) else generated_csv[0]
+                is_excel = target_file.endswith('.xlsx')
         
-        with open(target_file, "rb") as cf:
-            d_col2.download_button(
-                label=f"🛡️ Download Quarantine Audit ({'.xlsx' if is_excel else '.csv'})",
-                data=cf.read(),
-                file_name=os.path.basename(target_file),
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if is_excel else "text/csv"
-            )
+                with open(target_file, "rb") as cf:
+                    d_col2.download_button(
+                        label=f"🛡️ Download Quarantine Audit ({'.xlsx' if is_excel else '.csv'})",
+                        data=cf.read(),
+                        file_name=os.path.basename(target_file),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if is_excel else "text/csv"
+                )
 
             if generated_parquet:
                 with open(generated_parquet[0], "rb") as pf:
