@@ -863,21 +863,52 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     d2_let = get_column_letter(headers.index(dim2_col) + 1)  # Parent (Zone / Category)
     m1_let = get_column_letter(headers.index(m1_col) + 1)    # Primary Measure Metric
 
-    unique_dim1 = [str(x) for x in df[dim1_col].dropna().unique()][:12]
+    # 1. Dimension 1 (Top-6 + Other Grouping)
+    try:
+        s_dim1 = df.groupby(dim1_col)[m1_col].sum().sort_values(ascending=False).index.tolist()
+        sorted_dim1 = [str(x) for x in s_dim1 if pd.notna(x) and str(x).strip() != '']
+    except Exception:
+        sorted_dim1 = [str(x) for x in df[dim1_col].dropna().unique()]
+
+    has_other1 = len(sorted_dim1) > 6
+    top_dim1 = sorted_dim1[:6] if has_other1 else sorted_dim1[:10]
+    unique_dim1 = list(top_dim1)
+    if has_other1:
+        unique_dim1.append("Other")
+
     if dim1_col:
         ws_calc['A1'], ws_calc['B1'] = str(dim1_col), str(m1_col)
         agg_str = 'AVERAGE' if m1_agg == 'AVG' else 'SUM'
-        for i, val in enumerate(unique_dim1, start=2):
+        for i, val in enumerate(top_dim1, start=2):
             ws_calc[f'A{i}'] = str(val)
             ws_calc[f'B{i}'] = f'=IFERROR(IF(Executive_Dashboard!$J$1="All", {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}), {agg_str}IFS(Cleaned_Data!{m1_let}2:{m1_let}{num_rows}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Calculations!A{i}, Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Executive_Dashboard!$J$1)), 0)'
 
-    unique_dim2 = [str(x) for x in df[dim2_col].dropna().unique()][:15]
+        if has_other1:
+            other_r1 = len(top_dim1) + 2
+            ws_calc[f'A{other_r1}'] = "Other"
+            tot_m1_expr = get_agg_form(agg_str, m1_let, d2_let, d1_let, 2, num_rows)
+            ws_calc[f'B{other_r1}'] = f'=IFERROR(MAX(0, {tot_m1_expr} - SUM(Calculations!B2:B{other_r1-1})), 0)'
+
+    # 2. Dimension 2 (Top-5 + Other Grouping)
+    v_counts2 = df[dim2_col].value_counts()
+    sorted_dim2 = [str(x) for x in v_counts2.index if pd.notna(x) and str(x).strip() != '']
+    has_other2 = len(sorted_dim2) > 5
+    top_dim2 = sorted_dim2[:5] if has_other2 else sorted_dim2[:10]
+    unique_dim2 = list(top_dim2)
+    if has_other2:
+        unique_dim2.append("Other")
+
     if unique_dim2:
         ws_calc['D1'], ws_calc['E1'] = str(dim2_col), "Volume"
-        for i, val in enumerate(unique_dim2, start=2):
+        for i, val in enumerate(top_dim2, start=2):
             ws_calc[f'D{i}'] = str(val)
             ws_calc[f'E{i}'] = f'=IFERROR(IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, Calculations!D{i}, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, Executive_Dashboard!$M$1)), 0)'
 
+        if has_other2:
+            other_r2 = len(top_dim2) + 2
+            ws_calc[f'D{other_r2}'] = "Other"
+            tot_vol_expr = f'IF(AND(Executive_Dashboard!$J$1="All", Executive_Dashboard!$M$1="All"), COUNTA(Cleaned_Data!A2:A{num_rows}), IF(Executive_Dashboard!$J$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1), IF(Executive_Dashboard!$M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1))))'
+            ws_calc[f'E{other_r2}'] = f'=IFERROR(MAX(0, {tot_vol_expr} - SUM(Calculations!E2:E{other_r2-1})), 0)'
     ws_dash = wb.create_sheet(title="Executive_Dashboard", index=0)
     ws_dash.sheet_view.showGridLines = False
     for c_letter in ['A','B','C','D','E','F','G','H','I','J','K','L','M','N']:
