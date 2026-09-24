@@ -767,12 +767,12 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
 
     # --- FULL AUTONOMOUS ZERO-TOUCH GEMINI AI TRIGGER ---
     try:
-        import ai_semantic_agent
-        print(f"[AI AGENT] Auto-generating semantic contract via Gemini for: {file_path}")
-        ai_semantic_agent.run_agent(file_path)
-        if contract_path.exists():
-            with open(contract_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+        print(f"[AI AGENT] Auto-generating semantic contract via Gemini for: {stem}")
+        sample_path = f"contracts/{stem}_sample.csv"
+        df.head(20).to_csv(sample_path, index=False)
+        agent_contract = ai_semantic_agent.run_agent(sample_path)
+        if agent_contract:
+            return agent_contract
     except Exception as ai_err:
         print(f"[AI FALLBACK] Proceeding with heuristic contract. Reason: {ai_err}")
             
@@ -859,6 +859,10 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         parent_dim, child_dim = raw_d2, raw_d1
 
     dim1_col, dim2_col = child_dim, parent_dim
+    if dim1_col == dim2_col:
+            date_candidates = [c for c in df.columns if any(k in str(c).lower() for k in ['date', 'time', 'dt', 'month', 'year', 'day'])]
+            if date_candidates:
+                dim2_col = date_candidates[0]
     d1_let = get_column_letter(headers.index(dim1_col) + 1)  # Child (Branch / Entity)
     d2_let = get_column_letter(headers.index(dim2_col) + 1)  # Parent (Zone / Category)
     m1_let = get_column_letter(headers.index(m1_col) + 1)    # Primary Measure Metric
