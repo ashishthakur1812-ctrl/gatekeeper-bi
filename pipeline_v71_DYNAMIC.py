@@ -754,8 +754,9 @@ def get_agg_form(func, col, d1, d2, r_start, r_end):
 
 def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) -> dict:
     os.makedirs("contracts", exist_ok=True)
-    stem = Path(file_path).stem.replace("_Gatekeeper_Dashboard", "").replace("_Cleaned", "")
-    contract_path = Path("contracts") / f"{stem}_contract.json"
+    import hashlib
+    data_hash = hashlib.md5("".join(sorted(df.columns)).encode()).hexdigest()[:8]
+    contract_path = Path("contracts") / f"contract_{data_hash}.json"
     
     # Return existing contract if present (Allows zero-code manual overrides)
     if contract_path.exists():
@@ -767,8 +768,8 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
 
     # --- FULL AUTONOMOUS ZERO-TOUCH GEMINI AI TRIGGER ---
     try:
-        print(f"[AI AGENT] Auto-generating semantic contract via Gemini for: {stem}")
-        sample_path = f"contracts/{stem}_sample.csv"
+        print(f"[AI AGENT] Auto-generating semantic contract via Gemini for: {data_hash}")
+        sample_path = f"contracts/{data_hash}_sample.csv"
         df.head(20).to_csv(sample_path, index=False)
         agent_contract = ai_semantic_agent.run_agent(sample_path)
         if agent_contract:
