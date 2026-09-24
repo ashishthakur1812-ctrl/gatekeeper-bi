@@ -1,6 +1,12 @@
 import time
 import json
 import os
+try:
+    import streamlit as st
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    pass
 from pathlib import Path
 import sys
 from google import genai
