@@ -373,7 +373,7 @@ def profile_algebraic_types(df):
         uniqueness_ratio = n_unique / n_rows
 
         # Rule 1: Temporal Gate
-        if any(k in col_low for k in ['date', 'time', 'ts', 'timestamp', 'period', 'month', 'year']) or pd.api.types.is_datetime64_any_dtype(series):
+        if (pd.api.types.is_datetime64_any_dtype(series) or any(k in col_low for k in ['date', 'time', 'timestamp', 'order_date', 'ship_date'])) and not any(k in col_low for k in ['revenue', 'mrr', 'ticket', 'count', 'amount', 'cost', 'price', 'fee']):
             schema['Temporal_Dims'].append(col_str)
             continue
 
@@ -979,16 +979,14 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c1.x_axis.majorGridlines = None
         # Safe Signal Unpacking
         agg_raw = execute_math_agg(df, dim1_col, m1_col, m1_agg)
-        agg_preview = agg_raw[0] if isinstance(agg_raw, tuple) else agg_raw
         try:
-            has_c1_neg = bool((agg_preview.select_dtypes(include=['number']) < 0).any().any()) if isinstance(agg_preview, pd.DataFrame) else False
-            agg_max = float(agg_preview.max())
-            agg_min = float(agg_preview.min())
+            m_series = pd.to_numeric(df[m1_col], errors='coerce').dropna() if m1_col in df.columns else pd.Series(dtype=float)
+            has_c1_neg = bool((m_series < 0).any()) if not m_series.empty else False
+            agg_max = float(m_series.max()) if not m_series.empty else 1.0
+            agg_min = float(m_series.min()) if not m_series.empty else 0.0
         except Exception:
-            has_c1_neg = bool((pd.to_numeric(df[m1_col], errors='coerce') < 0).any()) if m1_col in df.columns else False
-            agg_max = float(df[m1_col].max()) if m1_col in df.columns else 0.0
-            agg_min = float(df[m1_col].min()) if m1_col in df.columns else 0.0
-
+            has_c1_neg = False
+            agg_max, agg_min = 1.0, 0.0
         cardinality_c1 = len(unique_dim1)
         sec_type = profile.get('sector', 'GENERAL_ENTERPRISE')
 
