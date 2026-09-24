@@ -755,6 +755,7 @@ def get_agg_form(func, col, d1, d2, r_start, r_end):
 def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) -> dict:
     os.makedirs("contracts", exist_ok=True)
     import hashlib
+    import ai_semantic_agent
     data_hash = hashlib.md5("".join(sorted(df.columns)).encode()).hexdigest()[:8]
     contract_path = Path("contracts") / f"contract_{data_hash}.json"
     
@@ -798,7 +799,7 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
         opt_goal = "MAX"
         
     contract = {
-        "dataset_signature": stem,
+        "dataset_signature": data_hash,
         "theme_palette": math_profile.get("sector", "GENERAL_ENTERPRISE"),
         "currency_symbol": curr,
         "primary_measure": {
