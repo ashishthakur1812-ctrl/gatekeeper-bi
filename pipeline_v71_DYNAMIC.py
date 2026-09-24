@@ -760,12 +760,12 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
     contract_path = Path("contracts") / f"contract_{data_hash}.json"
     
     # Return existing contract if present (Allows zero-code manual overrides)
-    if contract_path.exists():
-        try:
-            with open(contract_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+    #if contract_path.exists():
+        #try:
+            #with open(contract_path, "r", encoding="utf-8") as f:
+                #return json.load(f)
+        #except Exception:
+            #pass
 
     # --- FULL AUTONOMOUS ZERO-TOUCH GEMINI AI TRIGGER ---
     try:
