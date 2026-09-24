@@ -17,7 +17,7 @@ import pandas as pd
 
 def get_working_llm_contract(client, prompt: str) -> dict:
     candidates = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
-    delays = [4, 8, 15]
+    delays = [1, 2, 4]
     for model_name in candidates:
         for attempt, delay in enumerate(delays):
             try:
