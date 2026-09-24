@@ -438,96 +438,18 @@ def profile_algebraic_types(df):
                 schema['Metric_Aggregations'][col_str] = 'SUM'
             continue
 
-        # Rule 4: Categorical Text Dimensions
-        if 2 <= n_unique <= 30 and (uniqueness_ratio < 0.90 or n_rows <= 50):
+        # Rule 4: Universal Categorical Text Dimensions
+        if (2 <= n_unique <= 100) and (uniqueness_ratio < 0.90 or n_rows <= 50):
             schema['Categorical_Dims'].append(col_str)
         else:
             schema['Identifier_Keys'].append(col_str)
 
-    return schema
-
-    for col in df.columns:
-        col_str = str(col).strip()
-        col_low = col_str.lower()
-        series = df[col].dropna()
-        series = series[series != '']
-        n_unique = series.nunique()
-        if n_unique == 0:
-            continue
-
-        uniqueness_ratio = n_unique / n_rows
-
-        # Rule 1: Temporal Gate
-        if any(k in col_low for k in ['date', 'time', 'ts', 'timestamp', 'period', 'month', 'year']) or pd.api.types.is_datetime64_any_dtype(series):
-            schema['Temporal_Dims'].append(col_str)
-            continue
-
-        # Rule 2: Explicit ID / Pincode Keyword Gate
-        if any(k in col_low for k in ['id', 'code', 'pin', 'zip', 'key', 'sku', 'phone', 'account', 'unit']):
-            if 2 <= n_unique <= 15 and uniqueness_ratio < 0.40:
-                schema['Categorical_Dims'].append(col_str)
-            else:
-                schema['Identifier_Keys'].append(col_str)
-            continue
-
-        # Rule 3: Pure Numeric Classification & Mathematical Traps Guard
-        if pd.api.types.is_numeric_dtype(series):
-            # Trap A: Unlabeled Serial / Key / Pincode (High uniqueness integer)
-            if (uniqueness_ratio > 0.85 and len(series) > 50) and (series.dtype in ['int64', 'int32', 'int16', 'int8']) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total', 'age']):
-                schema['Identifier_Keys'].append(col_str)
-                continue
-
-            # Trap B: Discrete State Code (Status 200, 404, 500 or State 1, 2, 3)
-            if (series.dtype in ['int64', 'int32']) and (2 <= n_unique <= 6) and (len(series) > 50) and not any(k in col_low for k in ['amount', 'bill', 'sales', 'revenue', 'cost', 'spend', 'price', 'fee', 'charge', 'total']):
-                schema['Categorical_Dims'].append(col_str)
-                continue
-
-            c_min = float(series.min())
-            c_max = float(series.max())
-            c_mean = float(series.mean()) if len(series) > 0 else 0.0
-            c_std = float(series.std()) if len(series) > 1 else 0.0
-            cv = (c_std / abs(c_mean)) if c_mean != 0 else 1.0
-            skew = float(series.skew()) if len(series) > 2 else 0.0
-
-            # Rule A: Explicit Extensive Measures (Additive Volumes / Amounts always SUM)
-        is_extensive = any(k in col_low for k in ['sales', 'revenue', 'cost', 'spend', 'expense', 'profit', 'volume', 'qty', 'quantity', 'units', 'amount', 'total', 'gmv', 'loss', 'count'])
-        
-        # Rule B: Bounded Ratings, Scores & Percentages (Intensive always AVERAGE)
-        is_ratio = (c_min >= -1.0) and (c_max <= 1.0) and (series.dtype in ['float64', 'float32'])
-        is_pct_rate = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['pct', 'percent', 'rate', 'ratio', 'margin', 'efficiency'])
-        is_rating_score = (c_min >= 0.0) and (c_max <= 100.0) and any(k in col_low for k in ['score', 'rating', 'stars', 'grade', 'index', 'nps', 'csat'])
-        
-        # Rule C: Time/Latency Metrics (Intensive MEDIAN)
-        is_latency = any(k in col_low for k in ['delay', 'duration', 'latency', 'tat', 'stay', 'wait', 'ping', 'transit', 'lead_time'])
-        
-        # Rule D: Steady-State Sensor (Low Dispersion CV < 0.15)
-        is_steady = (cv < 0.15) and (c_min > 0) and not is_extensive
-
-        if is_extensive:
-            schema['Additive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'SUM'
-        elif is_ratio or is_pct_rate or is_rating_score:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        elif is_latency:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'MEDIAN'
-        elif is_steady:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        elif (abs(skew) > 1.2) and (series.dtype in ['float64', 'float32']) and not is_extensive:
-            schema['Intensive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'AVERAGE'
-        else:
-            schema['Additive_Measures'].append(col_str)
-            schema['Metric_Aggregations'][col_str] = 'SUM'
-        continue
-
-        # Rule 4: Categorical Text Dimensions
-        if 2 <= n_unique <= 30 and (uniqueness_ratio < 0.90 or n_rows <= 50):
-            schema['Categorical_Dims'].append(col_str)
-        else:
-            schema['Identifier_Keys'].append(col_str)
+    # Sort categories: Broad category (Macro) pehle, sub-category (Micro) baad mein
+    schema['Categorical_Dims'] = sorted(
+        schema['Categorical_Dims'], 
+        key=lambda c: df[c].nunique(dropna=True), 
+        reverse=True
+    )
 
     return schema
 
