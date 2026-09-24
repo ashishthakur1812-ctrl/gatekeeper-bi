@@ -901,7 +901,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
 
     ws_calc['I6'] = '=IFERROR(AVERAGE(I2:I5), 0)'
     ws_dash.merge_cells('G2:N2')
-    ws_dash['G2'] = f'= "📈 BUSINESS HEALTH INDEX: " & ROUND(MIN(100, MAX(0, 50 + (Calculations!I6*100))), 0) & "/100   |   " & IF(Calculations!I6>0, "Expanding ▲", IF(Calculations!I6<0, "Contracting ▼", "Stagnant ◂▸"))'
+    ws_dash['G2'] = f'="📈 BUSINESS HEALTH INDEX: " & ROUND(MIN(100, MAX(0, 50 + (Calculations!I6*100))), 0) & "/100   |   " & IF(Calculations!I6>0, "Expanding ▲", IF(Calculations!I6<0, "Contracting ▼", "Stagnant ◂▸"))'
     ws_dash['G2'].font = Font(size=8.5, bold=True, color='065F46')
     ws_dash['G2'].fill = PatternFill(start_color='ECFDF5', fill_type="solid")
 
