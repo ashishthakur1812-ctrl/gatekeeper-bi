@@ -985,10 +985,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     if unique_dim2:
         c2 = DoughnutChart() if profile['chart2_config']['mode'] == 'STATUS_DOUGHNUT' else BarChart()
         c2.title, c2.style, c2.height, c2.width = profile['chart2_config']['title'], 10, 6.6, 12.8
-        c2.dataLabels = DataLabelList()
         if isinstance(c2, DoughnutChart):
-            c2.dataLabels.showPercent = False
-            c2.dataLabels.showVal = False
+            c2.dataLabels = None
             c2.holeSize, c2.legend = 65, Legend()
             c2.legend.legendPos = "r"
         else:
@@ -1022,8 +1020,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     
     fmt_m1 = get_math_format(df, m1_col, m1_agg)
     calc_end_r = 1 + len(unique_dim1)
-    top_func = 'SMALL' if opt_goal == 'MIN' else 'LARGE'
-    lag_func = 'LARGE' if opt_goal == 'MIN' else 'SMALL'
+    top_func = 'LARGE' 
+    lag_func = 'SMALL' 
     matrix_specs = [
         ('Top', top_func, 1, pal['badge_top'], '\u2605'),
         ('Top', top_func, 2, pal['badge_top'], '\u2605'),
