@@ -804,8 +804,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     except Exception:
         sorted_dim1 = [str(x) for x in df[dim1_col].dropna().unique()]
 
-    has_other1 = len(sorted_dim1) > 6
-    top_dim1 = sorted_dim1[:6] if has_other1 else sorted_dim1[:10]
+    has_other1 = len(sorted_dim1) > 10
+    top_dim1 = sorted_dim1[:10] if has_other1 else sorted_dim1
     unique_dim1 = list(top_dim1)
     if has_other1:
         unique_dim1.append("Other")
@@ -826,8 +826,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     # 2. Dimension 2 (Top-5 + Other Grouping)
     v_counts2 = df[dim2_col].value_counts()
     sorted_dim2 = [str(x) for x in v_counts2.index if pd.notna(x) and str(x).strip() != '']
-    has_other2 = len(sorted_dim2) > 5
-    top_dim2 = sorted_dim2[:5] if has_other2 else sorted_dim2[:10]
+    has_other2 = len(sorted_dim2) > 10
+    top_dim2 = sorted_dim2[:10] if has_other2 else sorted_dim2
     unique_dim2 = list(top_dim2)
     if has_other2:
         unique_dim2.append("Other")
@@ -1024,7 +1024,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     ws_dash[f'A{z3_start}'].fill = f_sub
     
     fmt_m1 = get_math_format(df, m1_col, m1_agg)
-    calc_end_r = 1 + len(unique_dim1)
+    calc_end_r = 1 + len(top_dim1)
     top_func = 'LARGE' 
     lag_func = 'SMALL' 
     matrix_specs = [
