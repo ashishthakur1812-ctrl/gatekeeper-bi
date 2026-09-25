@@ -522,17 +522,23 @@ def diagnose_root_cause(df, dim1, metric, agg_type, opt_goal="MAX"):
     try:
         _res = execute_math_agg(df, dim1, metric, agg_type)
         agg_d1 = _res[1] if isinstance(_res, tuple) else _res
-        if len(agg_d1) > 1:
+        # Zero aur negative rows ko filter karke actual positive performers nikalna
+        valid_agg = agg_d1[agg_d1 > 0]
+        
+        if len(valid_agg) > 1:
+            m_label = metric.replace('_', ' ')
+            tot_val = float(valid_agg.sum())
+            
             if opt_goal == "MIN":
-                # For MIN metrics, highest cost cohort is the laggard / cost-drag
-                lag_dim1, lag_val, tot_val = str(agg_d1.index[0]), float(agg_d1.iloc[0]), float(agg_d1.sum())
+                # MIN metric (Cost/Expense/Attrition) ke liye highest cost is the drag
+                lag_dim1, lag_val = str(valid_agg.index[0]), float(valid_agg.iloc[0])
                 lag_share = (lag_val / tot_val) * 100.0 if tot_val > 0 else 0
                 return f"Primary cost concentration localized in '{lag_dim1}', driving {lag_share:.1f}% of total expenditure.", lag_dim1
             else:
-                # For MAX metrics, lowest volume cohort is the underperformer
-                lag_dim1, lag_val, tot_val = str(agg_d1.index[-1]), float(agg_d1.iloc[-1]), float(agg_d1.sum())
+                # MAX metric (Revenue/Profit) ke liye lowest valid category is underperformer
+                lag_dim1, lag_val = str(valid_agg.index[-1]), float(valid_agg.iloc[-1])
                 lag_share = (lag_val / tot_val) * 100.0 if tot_val > 0 else 0
-                return f"Negative variance heavily localized in '{lag_dim1}', capturing only {lag_share:.1f}% of throughput.", lag_dim1
+                return f"Lowest performance contribution localized in '{lag_dim1}', capturing only {lag_share:.1f}% of total {m_label}.", lag_dim1
         return 'Operational metrics within nominal statistical tolerance.', None
     except:
         return f"Isolated structural deviation in '{dim1}' baseline cohorts.", None
