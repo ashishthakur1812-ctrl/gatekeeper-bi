@@ -986,8 +986,12 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c2 = DoughnutChart() if profile['chart2_config']['mode'] == 'STATUS_DOUGHNUT' else BarChart()
         c2.title, c2.style, c2.height, c2.width = profile['chart2_config']['title'], 10, 6.6, 12.8
         if isinstance(c2, DoughnutChart):
-            c2.dataLabels = None
-            c2.holeSize, c2.legend = 65, Legend()
+            c2.dataLabels = DataLabelList()
+            c2.dataLabels.showPercent = True
+            c2.dataLabels.showCatName = False
+            c2.dataLabels.showSerName = False
+            c2.holeSize = 65
+            c2.legend = Legend()
             c2.legend.legendPos = "r"
         else:
             sec_type = profile.get('sector', 'GENERAL_ENTERPRISE')
