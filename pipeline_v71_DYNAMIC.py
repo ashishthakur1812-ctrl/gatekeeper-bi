@@ -988,6 +988,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         if isinstance(c2, DoughnutChart):
             c2.dataLabels = DataLabelList()
             c2.dataLabels.showPercent = True
+            c2.dataLabels.showVal = False
             c2.dataLabels.showCatName = False
             c2.dataLabels.showSerName = False
             c2.holeSize = 65
