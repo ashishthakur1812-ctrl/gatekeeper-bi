@@ -545,7 +545,7 @@ def diagnose_root_cause(df, dim1, metric, agg_type, opt_goal="MAX"):
 
 def generate_nlg_executive_summary(df, profile):
     dim1, metric, agg_type = profile['macro_dim'], profile['primary_measure'], profile['primary_agg']
-    opt_goal = profile.get('optimization_goal', 'MAX')
+    opt_goal = 'MAX'
     if not dim1 or not metric or df.empty or dim1 not in df.columns:
         return ["• Pipeline processed securely."]
     try:
@@ -553,7 +553,7 @@ def generate_nlg_executive_summary(df, profile):
         if agg_d1.empty:
             return ["• Zero net measure variance across dimensions."]
 
-        total_val = float(valid_df[metric].mean() if agg_type == 'AVG' else valid_df[metric].sum())
+        total_val = float(df[metric].dropna().mean()) if agg_type == 'AVG' else float(df[metric].dropna().sum())
         is_ratio = (agg_type == 'AVG' and valid_df[metric].max() <= 1.0)
         diag_str, lag_dim = diagnose_root_cause(valid_df, dim1, metric, agg_type, opt_goal)
 
@@ -984,7 +984,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         c2.title, c2.style, c2.height, c2.width = profile['chart2_config']['title'], 10, 6.6, 12.8
         c2.dataLabels = DataLabelList()
         if isinstance(c2, DoughnutChart):
-            c2.dataLabels.showPercent = True
+            c2.dataLabels.showPercent = False
             c2.dataLabels.showVal = False
             c2.holeSize, c2.legend = 65, Legend()
             c2.legend.legendPos = "r"
