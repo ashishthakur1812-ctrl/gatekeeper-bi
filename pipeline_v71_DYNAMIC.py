@@ -815,7 +815,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             other_r1 = len(top_dim1) + 2
             ws_calc[f'A{other_r1}'] = "Other"
             tot_m1_expr = get_agg_form(agg_str, m1_let, d2_let, d1_let, 2, num_rows)
-            ws_calc[f'B{other_r1}'] = f'=IFERROR(MAX(0, {tot_m1_expr} - SUM(Calculations!B2:B{other_r1-1})), 0)'
+            ws_calc[f'B{other_r1}'] = f'=IFERROR(MAX(0, {tot_m1_expr.lstrip("=")} - SUM(Calculations!B2:B{other_r1-1})), 0)'
 
     # 2. Dimension 2 (Top-5 + Other Grouping)
     v_counts2 = df[dim2_col].value_counts()
