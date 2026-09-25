@@ -973,7 +973,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
             #if agg_max > 0: c1.y_axis.scaling.max = agg_max * 1.25
 
         if agg_max >= 1_000_000:
-            c1.y_axis.number_format = '$#,##0,, "M"'
+            c1.y_axis.number_format = '#,##0,, "M"'
             c1.y_axis.sourceLinked = False
         c1.add_data(Reference(ws_calc, min_col=2, min_row=1, max_row=len(unique_dim1)+1), titles_from_data=True)
         c1.set_categories(Reference(ws_calc, min_col=1, min_row=2, max_row=len(unique_dim1)+1))
