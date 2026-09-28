@@ -129,7 +129,13 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
 
             # Retrieve rich dashboard from reports/ directory
             generated_excel = glob.glob(os.path.join("reports", "*Dashboard*.xlsx")) or glob.glob("*.xlsx")
-            generated_csv = glob.glob(os.path.join("quarantine", "*.csv")) or glob.glob("*.csv")
+            generated_quarantine = (
+                glob.glob(os.path.join("quarantine", "*.xlsx")) or 
+                glob.glob(os.path.join("reports", "*quarantine*.xlsx")) or 
+                glob.glob("*quarantine*.xlsx") or 
+                glob.glob(os.path.join("quarantine", "*.csv"))
+            )
+
             generated_parquet = glob.glob(os.path.join("clean_data", "*.parquet")) or glob.glob("*.parquet")
 
             if not generated_excel:
@@ -149,18 +155,19 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            if generated_csv:
-                q_xlsx_file = generated_csv[0].replace('.csv', '.xlsx')
-                target_file = q_xlsx_file if os.path.exists(q_xlsx_file) else generated_csv[0]
+            if generated_quarantine:
+                target_file = generated_quarantine[0]
                 is_excel = target_file.endswith('.xlsx')
         
-                with open(target_file, "rb") as cf:
+                with open(target_file, "rb") as qf:
                     d_col2.download_button(
                         label=f"🛡️ Download Quarantine Audit ({'.xlsx' if is_excel else '.csv'})",
-                        data=cf.read(),
+                        data=qf.read(),
                         file_name=os.path.basename(target_file),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if is_excel else "text/csv"
-                )
+                   )
+
+                
 
             if generated_parquet:
                 with open(generated_parquet[0], "rb") as pf:
