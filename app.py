@@ -129,12 +129,10 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
 
             # Retrieve rich dashboard from reports/ directory
             generated_excel = glob.glob(os.path.join("reports", "*Dashboard*.xlsx")) or glob.glob("*.xlsx")
-            generated_quarantine = (
-                glob.glob(os.path.join("quarantine", "*.xlsx")) or 
-                glob.glob(os.path.join("reports", "*quarantine*.xlsx")) or 
-                glob.glob("*quarantine*.xlsx") or 
-                glob.glob(os.path.join("quarantine", "*.csv"))
-            )
+            
+            # Har directory aur subfolder mein ghus kar quarantine file dhoondho
+            generated_quarantine = glob.glob("**/*quarantine*.*", recursive=True)
+
 
             generated_parquet = glob.glob(os.path.join("clean_data", "*.parquet")) or glob.glob("*.parquet")
 
