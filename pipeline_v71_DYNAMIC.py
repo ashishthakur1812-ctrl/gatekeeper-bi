@@ -195,6 +195,7 @@ def validate_with_circuit_breaker(
     q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
     if 'PRE_CLEAN_DROPPED_DF' in globals() and not PRE_CLEAN_DROPPED_DF.empty:
         quarantine_export_df = pd.concat([quarantine_export_df, PRE_CLEAN_DROPPED_DF], ignore_index=True)
+
     if quarantine_export_df.empty:
         quarantine_export_df = pd.DataFrame([{
             "Quarantine_Reason": "CLEARED_AUDIT_PASS",
@@ -202,6 +203,11 @@ def validate_with_circuit_breaker(
             "Validated_Rows": len(clean_df),
             "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
         }])
+    else:
+        # 1. Reason ko force karke Column A (Sabse pehle) par lao
+        if 'Quarantine_Reason' in quarantine_export_df.columns:
+            reordered_cols = ['Quarantine_Reason'] + [c for c in quarantine_export_df.columns if c != 'Quarantine_Reason']
+            quarantine_export_df = quarantine_export_df[reordered_cols]
 
     with pd.ExcelWriter(q_xlsx_path, engine='openpyxl') as writer:
         quarantine_export_df.to_excel(writer, sheet_name='Quarantine_Triage', index=False)
@@ -212,6 +218,12 @@ def validate_with_circuit_breaker(
         q_table = Table(displayName="QuarantineTriageTable", ref=tab_range)
         q_table.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
         ws.add_table(q_table)
+
+        # 2. Har column ki auto-width header aur content ke size ke hisaab se fit karo
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
 
     quarantine_export_df.to_csv(quarantine_path, index=False)
     status = 'PARTIAL SUCCESS (QUARANTINED)' if fatal_corrupt_rows > 0 else 'SUCCESS'
