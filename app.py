@@ -131,8 +131,7 @@ if st.button("🚀 Compile Full Enterprise Audit Suite", type="primary"):
             generated_excel = glob.glob(os.path.join("reports", "*Dashboard*.xlsx")) or glob.glob("*.xlsx")
             
             # Har directory aur subfolder mein ghus kar quarantine file dhoondho
-            generated_quarantine = glob.glob("**/*quarantine*.*", recursive=True)
-
+            generated_quarantine = glob.glob("**/*quarantine*.xlsx", recursive=True)
 
             generated_parquet = glob.glob(os.path.join("clean_data", "*.parquet")) or glob.glob("*.parquet")
 
