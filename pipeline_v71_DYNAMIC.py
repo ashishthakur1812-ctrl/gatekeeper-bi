@@ -247,7 +247,7 @@ def heal_and_ingest_csv(clean_path):
     for enc in encodings:
         try:
             with open(clean_path, 'r', encoding=enc, errors='replace') as f:
-                raw_lines = [line.strip() for line in f if line.strip()]
+                raw_lines = [line.strip() for line in f]
             if raw_lines: break
         except Exception:
             continue
@@ -270,6 +270,7 @@ def heal_and_ingest_csv(clean_path):
 
     for row in reader[1:]:
         if not row or not any(str(x).strip() for x in row):
+            sanitized_rows.append([None] * expected_len)
             continue
         row_tokens = [str(tok).strip() for tok in row]
         L = len(row_tokens)
