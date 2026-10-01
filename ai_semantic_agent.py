@@ -135,10 +135,12 @@ CRITICAL ARCHITECTURE RULES:
    - Slot 2 (Primary Throughput): Dominant volume metric (agg: "SUM", format: "$#,##0" if currency else "#,##0").
    - Slot 3 (Operational Friction/Secondary): Cost, delay, incident, or secondary volume (agg: "SUM" or "AVG", format: "$#,##0" or "#,##0").
    - Slot 4 (Efficiency/Intensity): Rate, margin, ratio, or quality score (agg: "AVG", format: "0.0%" or "0.00").
-   4. DIMENSIONS (CRITICAL BI GUARDRAILS):
-   - "macro_dimension": STRICTLY a non-date business categorical column (e.g., plan, movement, region, industry, status) with 3 to 25 unique values. FORBIDDEN: NEVER select date, month, year, or timestamp columns here.
-   - "secondary_dimension": Distinct non-date business categorical column for drilldown (MUST NOT be equal to macro_dimension and MUST NOT be a date/time column).
-   - "temporal_dimension": Primary date/month column from detected_dates, or null (Strictly reserved for Time-Series only).
+   4. DIMENSIONS (CRITICAL BI GUARDRAILS - ZERO-TOLERANCE):
+   - "macro_dimension": MUST BE a qualitative business entity/label (e.g., industry, education, status, location, department, plan, movement).
+     * STRICTLY FORBIDDEN: NEVER select continuous numbers, numeric scales, ages, experience, years, ratings, scores, counts, or dates.
+     * RULE: If the column values represent quantities or digits (e.g., 1, 2, 10, 20), IT IS NOT A CATEGORY.
+   - "secondary_dimension": Distinct qualitative business category for drilldown (MUST NOT be equal to macro_dimension, and MUST NOT be numeric/date).
+   - "temporal_dimension": Primary date column, or null (Time-Series only).
 5. PALETTE: Choose from "SLATE_CORPORATE", "EMERALD_GROWTH", "OCEAN_BLUE", "AMBER_EXECUTIVE".
 
 METADATA:
@@ -186,24 +188,31 @@ Respond ONLY with valid JSON strictly conforming to:
         # Keyword-Agnostic Mathematical Profiling
         valid_nums = [c for c, p in col_profiles.items() if p["is_numeric"] and not p["is_id_like"]]
         DATE_STOPWORDS = ['date', 'month', 'year', 'day', 'time', 'timestamp', 'period', 'dt']
+        NUMERIC_SCALE_STOPWORDS = ['age', 'exp', 'experience', 'year', 'yr', 'count', 'qty', 'score', 'rating', 'salary', 'amount', 'num', 'id']
 
-        valid_cats = [
-            c for c, p in col_profiles.items() 
-            if not p["is_numeric"] 
-            and not p["is_id_like"] 
-            and not p["is_date"] 
-            and not any(k in str(c).lower() for k in DATE_STOPWORDS)
-        ]
+        def is_really_a_category(col_name, profile):
+            # 1. Flag checks
+            if profile.get("is_numeric") or profile.get("is_id_like") or profile.get("is_date"):
+                return False
+            c_low = str(col_name).lower()
+            # 2. Date ya Numeric Scale name keywords
+            if any(k in c_low for k in DATE_STOPWORDS + NUMERIC_SCALE_STOPWORDS):
+                return False
+            # 3. Values Check: Agar unique values pure numbers/digits hain (e.g. '1', '2', '20') toh reject karo
+            sample_vals = [str(x).strip() for x in profile.get("top_values", []) if str(x).strip() != '']
+            if sample_vals and all(v.replace('.', '', 1).isdigit() for v in sample_vals):
+                return False
+            return True
+
+        valid_cats = [c for c, p in col_profiles.items() if is_really_a_category(c, p)]
 
         if not valid_cats:
+            # Secondary fallback with clean qualitative columns only
             valid_cats = [
-                c for c, p in col_profiles.items() 
-                if not p["is_numeric"] 
-                and not p["is_date"] 
-                and not any(k in str(c).lower() for k in DATE_STOPWORDS)
+                c for c in cols 
+                if not any(k in str(c).lower() for k in DATE_STOPWORDS + NUMERIC_SCALE_STOPWORDS)
+                and c not in valid_nums
             ]
-        if not valid_cats:
-            valid_cats = [c for c in cols if not any(k in str(c).lower() for k in DATE_STOPWORDS)]
         if not valid_cats:
             valid_cats = list(cols[:1])
             
