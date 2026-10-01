@@ -193,7 +193,8 @@ def validate_with_circuit_breaker(
     status = 'SUCCESS'
    # Quarantine File Generation: Hamesha file aur table create karo
     q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
-
+    if 'PRE_CLEAN_DROPPED_DF' in globals() and not PRE_CLEAN_DROPPED_DF.empty:
+        quarantine_export_df = pd.concat([quarantine_export_df, PRE_CLEAN_DROPPED_DF], ignore_index=True)
     if quarantine_export_df.empty:
         quarantine_export_df = pd.DataFrame([{
             "Quarantine_Reason": "CLEARED_AUDIT_PASS",
@@ -342,8 +343,18 @@ def clean_dataframe(df):
                 
             cleaned[col] = s.dropna().astype(str).apply(lambda x: ' '.join(str(x).replace('_', ' ').replace('-', ' ').split()).title() if str(x).strip() not in ['', 'Nan'] else np.nan)
             
+    global PRE_CLEAN_DROPPED_DF
+    _before_drop = cleaned.copy()
     cleaned.dropna(how='all', inplace=True)
     cleaned.drop_duplicates(inplace=True)
+
+    dropped_indices = _before_drop.index.difference(cleaned.index)
+    if len(dropped_indices) > 0:
+        PRE_CLEAN_DROPPED_DF = _before_drop.loc[dropped_indices].copy()
+        PRE_CLEAN_DROPPED_DF.insert(0, 'Quarantine_Reason', 'DUPLICATE_OR_EMPTY_ROW')
+    else:
+        PRE_CLEAN_DROPPED_DF = pd.DataFrame()
+
     return cleaned, initial_count - len(cleaned)
 
 # ==============================================================================
