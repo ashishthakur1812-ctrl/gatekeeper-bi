@@ -135,10 +135,10 @@ CRITICAL ARCHITECTURE RULES:
    - Slot 2 (Primary Throughput): Dominant volume metric (agg: "SUM", format: "$#,##0" if currency else "#,##0").
    - Slot 3 (Operational Friction/Secondary): Cost, delay, incident, or secondary volume (agg: "SUM" or "AVG", format: "$#,##0" or "#,##0").
    - Slot 4 (Efficiency/Intensity): Rate, margin, ratio, or quality score (agg: "AVG", format: "0.0%" or "0.00").
-4. DIMENSIONS:
-   - "macro_dimension": Categorical column with 3 to 25 unique values, top_value_dominance_pct < 80 (Used for Primary Ranking Chart).
-   - "secondary_dimension": Distinct categorical column for drilldown distribution (MUST NOT be equal to macro_dimension).
-   - "temporal_dimension": Primary date column from detected_dates, or null.
+   4. DIMENSIONS (CRITICAL BI GUARDRAILS):
+   - "macro_dimension": STRICTLY a non-date business categorical column (e.g., plan, movement, region, industry, status) with 3 to 25 unique values. FORBIDDEN: NEVER select date, month, year, or timestamp columns here.
+   - "secondary_dimension": Distinct non-date business categorical column for drilldown (MUST NOT be equal to macro_dimension and MUST NOT be a date/time column).
+   - "temporal_dimension": Primary date/month column from detected_dates, or null (Strictly reserved for Time-Series only).
 5. PALETTE: Choose from "SLATE_CORPORATE", "EMERALD_GROWTH", "OCEAN_BLUE", "AMBER_EXECUTIVE".
 
 METADATA:
@@ -185,10 +185,25 @@ Respond ONLY with valid JSON strictly conforming to:
         
         # Keyword-Agnostic Mathematical Profiling
         valid_nums = [c for c, p in col_profiles.items() if p["is_numeric"] and not p["is_id_like"]]
-        valid_cats = [c for c, p in col_profiles.items() if not p["is_numeric"] and not p["is_id_like"] and not p["is_date"] and p.get("top_value_dominance_pct", 0) < 80]
-        
+        DATE_STOPWORDS = ['date', 'month', 'year', 'day', 'time', 'timestamp', 'period', 'dt']
+
+        valid_cats = [
+            c for c, p in col_profiles.items() 
+            if not p["is_numeric"] 
+            and not p["is_id_like"] 
+            and not p["is_date"] 
+            and not any(k in str(c).lower() for k in DATE_STOPWORDS)
+        ]
+
         if not valid_cats:
-            valid_cats = [c for c, p in col_profiles.items() if not p["is_numeric"] and not p["is_date"]]
+            valid_cats = [
+                c for c, p in col_profiles.items() 
+                if not p["is_numeric"] 
+                and not p["is_date"] 
+                and not any(k in str(c).lower() for k in DATE_STOPWORDS)
+            ]
+        if not valid_cats:
+            valid_cats = [c for c in cols if not any(k in str(c).lower() for k in DATE_STOPWORDS)]
         if not valid_cats:
             valid_cats = list(cols[:1])
             
