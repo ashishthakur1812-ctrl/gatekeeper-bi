@@ -349,7 +349,9 @@ def clean_dataframe(df):
                     
             s_num = s.astype(str).apply(lambda x: re.sub(r'[^\d.\-]', '', str(x)) if pd.notna(x) and str(x).strip() != '' else np.nan)
             converted = pd.to_numeric(s_num, errors='coerce')
-            if converted.notna().sum() >= (0.5 * len(cleaned)):
+            # Check non-blank count instead of whole table length
+            non_blank_rows = s.dropna().astype(str).str.strip().ne('').sum()
+            if non_blank_rows > 0 and (converted.notna().sum() / non_blank_rows) >= 0.7:
                 cleaned[col] = converted
                 continue
                 
