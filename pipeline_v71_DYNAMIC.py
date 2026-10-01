@@ -191,28 +191,29 @@ def validate_with_circuit_breaker(
         return ValidationResult(clean_df, soft_imputations, fatal_corrupt_rows, 'CRITICAL_BREACH')    
     clean_df = validation_df.loc[~fatal_mask].copy()
     status = 'SUCCESS'
-    if fatal_corrupt_rows:
-        q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
-        with pd.ExcelWriter(q_xlsx_path, engine='openpyxl') as writer:
-            quarantine_export_df.to_excel(writer, sheet_name="Quarantine_Triage", index=False)
-            ws = writer.sheets["Quarantine_Triage"]
-            
-            max_row = len(quarantine_export_df) + 1
-            max_col_letter = get_column_letter(quarantine_export_df.shape[1])
-            tab_range = f"A1:{max_col_letter}{max_row}"
-            
-            q_table = Table(displayName="QuarantineTriageTable", ref=tab_range)
-            q_table.tableStyleInfo = TableStyleInfo(
-                name="TableStyleLight1",
-                showFirstColumn=False,
-                showLastColumn=False,
-                showRowStripes=True,
-                showColumnStripes=False
-            )
-            ws.add_table(q_table)
-            
-        quarantine_export_df.to_csv(quarantine_path, index=False)
-        status = 'PARTIAL SUCCESS (QUARANTINED)'
+   # Quarantine File Generation: Hamesha file aur table create karo
+    q_xlsx_path = quarantine_path.replace('.csv', '.xlsx')
+
+    if quarantine_export_df.empty:
+        quarantine_export_df = pd.DataFrame([{
+            "Quarantine_Reason": "CLEARED_AUDIT_PASS",
+            "Audit_Status": "100% Clean Pass - No Corrupt Records Found",
+            "Validated_Rows": len(clean_df),
+            "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+        }])
+
+    with pd.ExcelWriter(q_xlsx_path, engine='openpyxl') as writer:
+        quarantine_export_df.to_excel(writer, sheet_name='Quarantine_Triage', index=False)
+        ws = writer.sheets['Quarantine_Triage']
+        max_row = max(len(quarantine_export_df) + 1, 2)
+        max_col_letter = get_column_letter(quarantine_export_df.shape[1])
+        tab_range = f"A1:{max_col_letter}{max_row}"
+        q_table = Table(displayName="QuarantineTriageTable", ref=tab_range)
+        q_table.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
+        ws.add_table(q_table)
+
+    quarantine_export_df.to_csv(quarantine_path, index=False)
+    status = 'PARTIAL SUCCESS (QUARANTINED)' if fatal_corrupt_rows > 0 else 'SUCCESS'
     _write_validation_log(output_dir, ingested_rows, len(clean_df), soft_imputations, fatal_corrupt_rows, elapsed_seconds, status)
     return ValidationResult(clean_df, soft_imputations, fatal_corrupt_rows, status)
 
