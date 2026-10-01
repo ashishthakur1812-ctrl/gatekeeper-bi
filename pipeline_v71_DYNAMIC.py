@@ -341,10 +341,10 @@ def clean_dataframe(df):
         if cleaned[col].dtype == object or pd.api.types.is_string_dtype(cleaned[col]):
             s = cleaned[col]
             
-            if any(k in col_low for k in ['date', 'time', 'day', 'period', 'ts', 'timestamp']):
-                parsed = pd.to_datetime(s.astype(str).str.replace(r'[_/]', '-', regex=True), format='mixed', errors='coerce')
+            if any(k in col_low for k in ['date', 'time', 'day', 'month', 'year', 'period', 'ts', 'timestamp']):
+                parsed = pd.to_datetime(s.astype(str).str.replace(r'[_/.]', '-', regex=True), dayfirst=True, format='mixed', errors='coerce')
                 if parsed.notna().sum() >= (0.3 * len(cleaned)):
-                    cleaned[col] = parsed.dt.strftime('%Y-%m-%d')
+                    cleaned[col] = parsed
                     continue
                     
             s_num = s.astype(str).apply(lambda x: re.sub(r'[^\d.\-]', '', str(x)) if pd.notna(x) and str(x).strip() != '' else np.nan)
