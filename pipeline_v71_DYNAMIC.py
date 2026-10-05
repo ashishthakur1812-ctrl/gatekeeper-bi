@@ -29,8 +29,8 @@ GRACEFUL_DEFAULTS: Dict[str, object] = {
     'notes': '',
 }
 FATAL_CORRUPTION_THRESHOLD_PERCENT = 5.0
-PRIMARY_KEY_PATTERN = r'(?:^|[_\s-])(?:id|key|uuid|code|sku|account|record)(?:[_\s-]|$)'
-NON_NEGATIVE_METRIC_PATTERN = r'(?:amount|amt|metric|measure|value|revenue|price|cost|total|quantity|qty|count|score|salary)'
+PRIMARY_KEY_PATTERN = r"(?:^|_)(?:id|key|code|uuid|no|num|pk)(?:$|_)"
+NON_NEGATIVE_METRIC_PATTERN = r'(\u25bc:amount|amt|metric|measure|value|revenue|price|cost|total|quantity|qty|count|score|salary)'
 
 
 @dataclass(frozen=True)
@@ -48,17 +48,17 @@ def _matching_columns(columns: pd.Index, configured: Sequence[str]) -> pd.Index:
 
 
 def _resolve_primary_key(df: pd.DataFrame, primary_key: Optional[str]) -> Optional[str]:
-    if primary_key in df.columns:
+    if primary_key and primary_key in df.columns:
         return primary_key
-    normalized = pd.Series(df.columns, index=df.columns, dtype='object').astype(str)
-    candidates = normalized[normalized.str.contains(PRIMARY_KEY_PATTERN, case=False, regex=True)].index
-    return str(candidates[0]) if len(candidates) else None
+    # Pure Python column resolution: 100% immune to PyArrow RE2 regex crashes
+    candidates = [c for c in df.columns if any(k in str(c).lower() for k in ['id', 'no', 'code', 'key', 'pk', 'uuid', 'num'])]
+    return str(candidates[0]) if candidates else None
 
 
 def _resolve_non_negative_metrics(df: pd.DataFrame, primary_key: Optional[str]) -> pd.Index:
     numeric_columns = df.select_dtypes(include=np.number).columns
     normalized = pd.Series(numeric_columns, index=numeric_columns, dtype='object').astype(str)
-    metric_columns = normalized[normalized.str.contains(NON_NEGATIVE_METRIC_PATTERN, case=False, regex=True)].index
+    metric_columns = pd.Index([c for c in numeric_columns if any(k in str(c).lower() for k in ['qty', 'quant', 'rev', 'cost', 'spend', 'price', 'sales', 'margin', 'unit', 'count'])])
     if primary_key is not None:
         metric_columns = metric_columns[metric_columns != primary_key]
     return metric_columns
@@ -300,18 +300,168 @@ def heal_and_ingest_csv(clean_path):
 
     return pd.DataFrame(sanitized_rows, columns=headers)
 
+import difflib
+
+def deduplicate_categories(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+
+    target_cols = []
+    for col in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            if df[col].nunique() < 250:
+                target_cols.append(col)
+
+    if 'category' in df.columns and 'category' not in target_cols:
+        target_cols.append('category')
+
+    for col in target_cols:
+        clean_s = df[col].fillna('').astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.lower()
+        valid_mask = ~clean_s.isin(['nan', 'none', 'nat', '', '<na>', 'null'])
+        if not valid_mask.any():
+            continue
+
+        counts = clean_s[valid_mask].value_counts()
+        masters = counts[counts > 15].index.tolist()
+        if len(masters) < 2:
+            masters = counts.head(5).index.tolist()
+
+        val_mapping = {}
+        for raw_val in df[col].unique():
+            if pd.isna(raw_val) or str(raw_val).strip().lower() in ['nan', 'none', '']:
+                val_mapping[raw_val] = raw_val
+                continue
+
+            val_norm = re.sub(r'\s+', ' ', str(raw_val).strip()).lower()
+
+            if val_norm in masters:
+                val_mapping[raw_val] = val_norm.title()
+                continue
+
+            best_master = None
+            best_score = 0.0
+            for m in masters:
+                score = difflib.SequenceMatcher(None, val_norm, m).ratio()
+                if score > best_score:
+                    best_score = score
+                    best_master = m
+
+            if best_master and best_score >= 0.50:
+                val_mapping[raw_val] = best_master.title()
+            else:
+                val_mapping[raw_val] = str(raw_val).strip().title()
+
+        df[col] = df[col].map(val_mapping)
+
+    return df
+
 def ingest_file(clean_path):
     if not os.path.exists(clean_path): return None
     ext = os.path.splitext(clean_path)[-1].lower()
+    df = None
     try:
         if ext == '.csv':
-            return heal_and_ingest_csv(clean_path)
+            df = heal_and_ingest_csv(clean_path)
         elif ext in ['.xlsx', '.xls']:
-            return pd.read_excel(clean_path)
-    except:
+            df = pd.read_excel(clean_path)
+    except Exception as e:
+        print(f"[INGEST ERROR] {e}")
         return None
-    return None
 
+    if df is not None:
+        try:
+            print("[PIPELINE GATEKEEPER] Running autonomous category typo deduplication...")
+            df = deduplicate_categories(df)
+            print("[PIPELINE GATEKEEPER] Data sanitized successfully.")
+        except Exception as e:
+            print(f"[GATEKEEPER WARNING] Deduplication bypassed: {e}")
+
+    return df
+
+import difflib
+
+# ==========================================
+# UNIVERSAL ENGINES (VALIDATED)
+# ==========================================
+def standardize_dates_consensus(series: pd.Series) -> pd.Series:
+    s_clean = series.astype(str).str.strip().replace(['nan', 'None', 'NaT', '', '<NA>', 'null', 'INVALID_DATE'], np.nan)
+    valid_mask = s_clean.notna()
+    if not valid_mask.any():
+        return series
+
+    unified = s_clean[valid_mask].str.replace(r'[./]', '-', regex=True)
+    out_parsed = pd.Series(index=unified.index, dtype='object')
+
+    iso_mask = unified.str.match(r'^\d{4}-\d{1,2}-\d{1,2}')
+    if iso_mask.any():
+        out_parsed[iso_mask] = pd.to_datetime(unified[iso_mask], format='%Y-%m-%d', errors='coerce').dt.strftime('%Y-%m-%d')
+
+    reg_mask = ~iso_mask & unified.str.match(r'^\d{1,2}-\d{1,2}-\d{4}')
+    if reg_mask.any():
+        reg_series = unified[reg_mask]
+        extracted = reg_series.str.extract(r'^(\d{1,2})-(\d{1,2})-(\d{4})')
+        t1 = pd.to_numeric(extracted[0], errors='coerce')
+        t2 = pd.to_numeric(extracted[1], errors='coerce')
+
+        if (t2 > 12).any() and not (t1 > 12).any():
+            reg_fmt = '%m-%d-%Y'
+        elif (t1 > 12).any() and not (t2 > 12).any():
+            reg_fmt = '%d-%m-%Y'
+        else:
+            reg_fmt = '%m-%d-%Y'
+
+        out_parsed[reg_mask] = pd.to_datetime(reg_series, format=reg_fmt, errors='coerce').dt.strftime('%Y-%m-%d')
+
+    rem_mask = out_parsed.isna()
+    if rem_mask.any():
+        out_parsed[rem_mask] = pd.to_datetime(unified[rem_mask], errors='coerce').dt.strftime('%Y-%m-%d')
+
+    final_series = series.copy()
+    final_series[valid_mask] = out_parsed
+    return final_series
+
+def clean_shifted_anomalies(val):
+    if pd.isna(val):
+        return np.nan
+    s = str(val).strip()
+    if bool(re.match(r'^(\u25bc:to\s+\d+|\d+\s*to\s*\d+|\d+\s*-\s*\d+|\d+)$', s, flags=re.IGNORECASE)):
+        return "Unknown"
+    return s
+
+def cluster_and_deduplicate(s: pd.Series, col_name: str, threshold: float = 0.85) -> pd.Series:
+    try:
+        if s.empty or s.dropna().empty:
+            return s
+        val_counts = s.value_counts().to_dict()
+        unique_vals = [str(x) for x in s.dropna().unique() if str(x).strip()]
+        visited = set()
+        mapping = {}
+        for val in unique_vals:
+            if val in visited or val == "Unknown":
+                continue
+            matches = [val]
+            for candidate in unique_vals:
+                if candidate != val and candidate not in visited and candidate != "Unknown":
+                    ratio = difflib.SequenceMatcher(None, str(val).lower(), str(candidate).lower()).ratio()
+                    is_prefix = str(candidate).lower().startswith(str(val).lower()) or str(val).lower().startswith(str(candidate).lower())
+                    
+                    is_anagram = False
+                    is_negligible_noise = False
+                    if not any(char.isdigit() for char in str(val) + str(candidate)):
+                        c_cnt = val_counts.get(candidate, 0)
+                        v_cnt = val_counts.get(val, 0)
+                        is_negligible_noise = (c_cnt / max(v_cnt, 1)) < 0.10
+                        is_anagram = (sorted(str(val).strip().lower()) == sorted(str(candidate).strip().lower())) and len(str(val).strip()) <= 5
+                    
+                    if ratio >= threshold or (is_prefix and min(len(str(val)), len(str(candidate))) >= 4) or (is_anagram and is_negligible_noise):
+                        matches.append(candidate)
+            dominant = max(matches, key=lambda x: val_counts.get(x, 0))
+            for m in matches:
+                mapping[m] = dominant
+                visited.add(m)
+        return s.map(mapping).fillna(s)
+    except Exception as _e:
+        return s
 def clean_dataframe(df):
     cleaned = df.copy()
     cleaned.columns = [str(c).strip().replace('\n', ' ') for c in cleaned.columns]
@@ -323,7 +473,7 @@ def clean_dataframe(df):
         for c_i in range(len(cols) - 1):
             val_str = str(cleaned.iat[r_i, c_i]).strip()
             # Match number + string pattern
-            m = re.match(r'^([₹$â‚¹\s\d,.\-]+)\s+([A-Za-z].*)$', val_str)
+            m = re.match(r'^([â‚¹$Ã¢â€šÂ¹\s\d,.\-]+)\s+([A-Za-z].*)$', val_str)
             if m:
                 cleaned.iat[r_i, c_i] = m.group(1).strip()
                 if pd.isna(cleaned.iat[r_i, c_i + 1]) or str(cleaned.iat[r_i, c_i + 1]).strip() == '':
@@ -342,7 +492,8 @@ def clean_dataframe(df):
             s = cleaned[col]
             
             if any(k in col_low for k in ['date', 'time', 'day', 'month', 'year', 'period', 'ts', 'timestamp']):
-                parsed = pd.to_datetime(s.astype(str).str.replace(r'[_/.]', '-', regex=True), dayfirst=True, format='mixed', errors='coerce')
+                iso_dates = standardize_dates_consensus(cleaned[col])
+                parsed = pd.to_datetime(iso_dates, errors='coerce')
                 if parsed.notna().sum() >= (0.3 * len(cleaned)):
                     cleaned[col] = parsed
                     continue
@@ -355,7 +506,9 @@ def clean_dataframe(df):
                 cleaned[col] = converted
                 continue
                 
-            cleaned[col] = s.dropna().astype(str).apply(lambda x: ' '.join(str(x).replace('_', ' ').replace('-', ' ').split()).title() if str(x).strip() not in ['', 'Nan'] else np.nan)
+            s_shifted = s.apply(clean_shifted_anomalies)
+            s_clean = s_shifted.dropna().astype(str).apply(lambda x: ' '.join(str(x).replace('_', ' ').replace('-', ' ').split()).title() if str(x).strip() not in ['', 'Nan'] else np.nan)
+            cleaned[col] = cluster_and_deduplicate(s_clean, col_name=col)
             
     global PRE_CLEAN_DROPPED_DF
     _before_drop = cleaned.copy()
@@ -510,7 +663,7 @@ def build_mathematical_profile(df):
     primary_agg = 'AVG' if primary_measure in intensive_cands else 'SUM'
 
     s2_unq = df[sec_dim].nunique() if sec_dim in df.columns else 0
-    if 2 <= s2_unq <= 6: chart2_config = {'mode': 'STATUS_DOUGHNUT', 'dim': sec_dim, 'title': f'Distribution Segment ({sec_dim})'}
+    if 2 <= s2_unq <= 6: chart2_config = {'mode': 'STATUS_DOUGHNUT', 'dim': sec_dim, 'title': f'Distribution by {sec_dim.title()}'}
     elif intensive_cands: chart2_config = {'mode': 'INTENSIVE_AVG', 'dim': sec_dim, 'measure': intensive_cands[0], 'title': f'Average Distribution by {sec_dim}'}
     else: chart2_config = {'mode': 'CATEGORY_BAR', 'dim': sec_dim, 'title': f'Volume Distribution by {sec_dim}'}
 
@@ -574,11 +727,11 @@ def generate_nlg_executive_summary(df, profile):
     dim1, metric, agg_type = profile['macro_dim'], profile['primary_measure'], profile['primary_agg']
     opt_goal = 'MAX'
     if not dim1 or not metric or df.empty or dim1 not in df.columns:
-        return ["• Pipeline processed securely."]
+        return ["â€¢ Pipeline processed securely."]
     try:
         valid_df, agg_d1 = execute_math_agg(df, dim1, metric, agg_type)
         if agg_d1.empty:
-            return ["• Zero net measure variance across dimensions."]
+            return ["â€¢ Zero net measure variance across dimensions."]
 
         total_val = float(df[metric].dropna().mean()) if agg_type == 'AVG' else float(df[metric].dropna().sum())
         is_ratio = (agg_type == 'AVG' and valid_df[metric].max() <= 1.0)
@@ -587,20 +740,20 @@ def generate_nlg_executive_summary(df, profile):
         if opt_goal == "MIN":
             top_d1_name = str(agg_d1.index[-1]) # Lowest expenditure is top efficiency leader
             action_str = f"Action Directive: Operational efficiency benchmark governed by '{top_d1_name}'. Recommended budget containment audit for high-cost cohort '{lag_dim}'." if lag_dim else "Action Directive: Cost structures operating within target parameters."
-            lead_line = f"• Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, anchored by efficiency leader '{top_d1_name}'."
+            lead_line = f"\u2022 Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, anchored by efficiency leader '{top_d1_name}'."
         else:
             top_d1_name = str(agg_d1.index[0]) # Highest volume is growth leader
             action_str = f"Action Directive: Immediate operational audit recommended for '{lag_dim}' to optimize resource allocation and prevent further lag." if lag_dim else "Action Directive: Maintain current operational bandwidth and scale successful cohorts."
-            lead_line = f"• Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, spearheaded by '{top_d1_name}'."
+            lead_line = f"\u2022 Core Performance: Aggregate {metric.replace('_', ' ')} index reaches {format_compact_num(total_val, is_ratio, agg_type=='AVG')}, spearheaded by '{top_d1_name}'."
 
         lines = [
             lead_line,
-            f"• Root-Cause & Strategic Diagnostic: {diag_str}",
-            f"• {action_str}"
+            f"\u2022 Root-Cause & Strategic Diagnostic: {diag_str}",
+            f"â€¢ {action_str}"
         ]
         return lines
     except:
-        return ["• Executive Overview: Pipeline processed with aggregate metrics."]
+        return ["â€¢ Executive Overview: Pipeline processed with aggregate metrics."]
 
 # ==============================================================================
 # MODULE 4: PREDICTIVE FORECAST ENGINE (DYNAMIC RESOLUTION)
@@ -661,7 +814,7 @@ def generate_predictive_forecast_sheet(wb, df, profile):
         tag = 'Cost Savings / Efficiency Gain' if growth_pct <= 0 else 'Cost Inflation / Overrun'
     else:
         tag = 'Growth / Volume Gain' if growth_pct >= 0 else 'Contraction / Decline'
-    arrow = '▼' if growth_pct < 0 else ('▲' if growth_pct > 0 else '•')
+    arrow = 'â–¼' if growth_pct < 0 else ('â–²' if growth_pct > 0 else 'â€¢')
     trend_txt = f"  PROJECTED TRAJECTORY: {arrow} {abs(growth_pct):.1f}% {tag} expected over next 3 cycles."
     ws_fc['E2'] = trend_txt
     ws_fc['E2'].font = Font(bold=True, size=10, color='065F46' if is_favorable else '991B1B')
@@ -743,7 +896,7 @@ def resolve_json_contract(file_path: str, df: pd.DataFrame, math_profile: dict) 
     elif any(k in p_meas_lower for k in ["usd", "dollar", "cost", "price", "revenue", "spend"]):
         curr = "$"
     elif any(k in p_meas_lower for k in ["eur", "euro"]):
-        curr = "€"
+        curr = "â‚¬"
     else:
         curr = ""
         
@@ -780,9 +933,47 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     opt_goal = contract.get("primary_measure", {}).get("optimization_goal", "MAX")
     profile["optimization_goal"] = opt_goal
     m_meas = contract.get("primary_measure", {}).get("column", profile.get("primary_measure", ""))
+        # CONTRACT-FIRST ADAPTER: Dual-key support for kpi_slots & kpi_measures
+    slots_data = contract.get("kpi_slots") or contract.get("kpi_measures") or []
+    parsed_kpis = []
+    if isinstance(slots_data, list):
+        for slot in slots_data:
+            if isinstance(slot, dict) and "column" in slot and slot["column"] in df.columns:
+                parsed_kpis.append({
+                    "column": slot["column"],
+                    "title": slot.get("title", slot["column"]),
+                    "agg": "AVG" if any(w in str(slot.get("column", "")).lower() for w in ["age", "duration", "day", "hour", "hr", "rate", "rating", "score", "pct", "percent", "margin", "ratio", "stay", "time"]) else str(slot.get("aggregation", "SUM")).upper(),
+                    "format": slot.get("format", "#,##0")
+                })
+    if parsed_kpis:
+        profile["kpi_contract_slots"] = parsed_kpis
+        profile["kpi_measures"] = [(k["column"], k["agg"]) for k in parsed_kpis]
+
+    if contract and contract.get("dimensions"):
+        dims = contract["dimensions"]
+        if dims.get("macro_dimension") and dims["macro_dimension"] in df.columns:
+            macro_dim = dims["macro_dimension"]
+            profile["macro_dim"] = macro_dim
+        if dims.get("secondary_dimension") and dims["secondary_dimension"] in df.columns:
+            sec_dim = dims["secondary_dimension"]
+            profile["sec_dim"] = sec_dim
+            
+            # --- Dynamic Polymorphic Chart 2 Sync ---
+            c2_type = str(dims.get("chart_2_type", "")).upper()
+            nu_dim2 = df[sec_dim].nunique(dropna=True)
+            if "chart2_config" not in profile or not isinstance(profile["chart2_config"], dict):
+                profile["chart2_config"] = {}
+            profile["chart2_config"]["dim"] = sec_dim
+            profile["chart2_config"]["title"] = f"Distribution by {sec_dim.replace('_', ' ').title()}"
+            
+            # 2 to 4 cats -> Doughnut; 5 to 12 cats -> Vertical Column
+            if "DOUGHNUT" in c2_type or (not c2_type and 2 <= nu_dim2 <= 4):
+                profile["chart2_config"]["mode"] = "STATUS_DOUGHNUT"
+            else:
+                profile["chart2_config"]["mode"] = "CATEGORY_BAR"
     wb = openpyxl.Workbook()
-    pal = profile['palette']
-    
+    pal = profile.get('palette', contract.get('theme_palette', 'GENERAL_ENTERPRISE') if 'contract' in locals() and isinstance(contract, dict) else 'GENERAL_ENTERPRISE')
+
     ws_data = wb.active
     ws_data.title = "Cleaned_Data"
     headers = list(df.columns)
@@ -815,7 +1006,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     else:
         parent_dim, child_dim = raw_d2, raw_d1
 
-    dim1_col, dim2_col = child_dim, parent_dim
+    dim1_col, dim2_col = raw_d1, raw_d2
     if dim1_col == dim2_col:
             date_candidates = [c for c in df.columns if any(k in str(c).lower() for k in ['date', 'time', 'dt', 'month', 'year', 'day'])]
             if date_candidates:
@@ -910,7 +1101,8 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
     ws_dash['A2'].fill = PatternFill(start_color="F1F5F9", fill_type="solid")
 
     cards_data = [(profile['vol_label'], f'=IFERROR(IF(AND($J$1="All", $M$1="All"), COUNTA(Cleaned_Data!A2:A{num_rows}), IF($J$1="All", COUNTIF(Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1), IF($M$1="All", COUNTIF(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1), COUNTIFS(Cleaned_Data!{d2_let}2:{d2_let}{num_rows}, $J$1, Cleaned_Data!{d1_let}2:{d1_let}{num_rows}, $M$1)))), 0)', '#,##0')]
-    for metric, agg_type in profile['kpi_measures']:
+    for entry in profile.get('kpi_measures', []):
+        metric, agg_type = (entry[0], entry[1]) if isinstance(entry, (list, tuple)) and len(entry) >= 2 else (entry, 'SUM')
         c_let = get_column_letter(headers.index(metric) + 1)
         lbl = f"{agg_type} {str(metric).upper().replace('_', ' ')}"
         func = 'AVERAGE' if agg_type in ['AVG', 'AVERAGE', 'MEDIAN'] else 'SUM'
@@ -934,7 +1126,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
 
     ws_calc['I6'] = '=IFERROR(AVERAGE(I2:I5), 0)'
     ws_dash.merge_cells('G2:N2')
-    ws_dash['G2'] = f'="BUSINESS HEALTH INDEX: " & ROUND(MIN(100, MAX(0, 50 + (Calculations!I6*100))), 0) & "/100   |   " & IF(Calculations!I6>0, "Expanding ▲", IF(Calculations!I6<0, "Contracting ▼", "Stagnant ◂▸"))'
+    ws_dash['G2'] = f'="BUSINESS HEALTH INDEX: " & ROUND(MIN(100, MAX(0, 50 + (Calculations!I6*100))), 0) & "/100 | " & IF(Calculations!I6>0, "Expanding \u25b2", IF(Calculations!I6<0, "Contracting \u25bc", "Stagnant \u25ac"))'
     ws_dash['G2'].font = Font(size=8.5, bold=True, color='065F46')
     ws_dash['G2'].fill = PatternFill(start_color='ECFDF5', fill_type="solid")
 
@@ -955,7 +1147,7 @@ def build_universal_dashboard(df, profile, output_path, dropped_count=0):
         ws_dash[f'{cs}4'].alignment = Alignment(horizontal="center")
         
         ws_dash.merge_cells(f'{cs}5:{ce}5')
-        ws_dash[f'{cs}5'] = f'=IF(Calculations!I{idx+2}=0, "▶ Steady", IF(Calculations!I{idx+2}>0, "▲ +" & TEXT(Calculations!I{idx+2}, "0.0%") & " Mom", "▼ " & TEXT(Calculations!I{idx+2}, "0.0%") & " Drag"))'
+        ws_dash[f'{cs}5'] = f'=IF(Calculations!I{idx+2}>0, "\u25b2 +" & TEXT(Calculations!I{idx+2}, "0.0%") & " Mom", "\u25bc " & TEXT(Calculations!I{idx+2}, "0.0%") & " Drag")'
         ws_dash[f'{cs}5'].font = Font(size=7.5, bold=True, color="334155")
         ws_dash[f'{cs}5'].fill = f_card
         ws_dash[f'{cs}5'].alignment = Alignment(horizontal="center")
@@ -1153,3 +1345,4 @@ if __name__ == "__main__":
         sys.exit(1)
         
   
+
